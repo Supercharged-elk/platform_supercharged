@@ -105,9 +105,23 @@ Slow pan across a city skyline at dusk"
       {!loading && actions.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
-              Enriched Actions — review & edit
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
+                Enriched Actions — review & edit
+              </p>
+              <span className="text-xs text-neutral-600">
+                {approvedCount}/{actions.length} approved
+              </span>
+              {approvedCount < actions.length && (
+                <button
+                  type="button"
+                  onClick={() => actions.forEach((a) => !a.approved && toggleActionApproved(a.id))}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 underline transition"
+                >
+                  Select all
+                </button>
+              )}
+            </div>
             {approvedCount > 0 && (
               <button
                 type="button"
@@ -134,14 +148,18 @@ Slow pan across a city skyline at dusk"
                 <button
                   type="button"
                   onClick={() => toggleActionApproved(action.id)}
+                  title={action.approved ? "Unapprove" : "Approve for keyframe generation"}
                   className={[
-                    "mt-0.5 shrink-0 w-5 h-5 rounded flex items-center justify-center border transition",
+                    "mt-0.5 shrink-0 w-5 h-5 rounded flex items-center justify-center border transition cursor-pointer",
                     action.approved
-                      ? "bg-indigo-600 border-indigo-500"
-                      : "border-neutral-600 bg-neutral-800",
+                      ? "bg-indigo-600 border-indigo-500 hover:bg-indigo-700"
+                      : "border-neutral-500 bg-neutral-700 hover:border-indigo-400 hover:bg-indigo-950/40",
                   ].join(" ")}
                 >
-                  {action.approved && <Check size={11} className="text-white" strokeWidth={3} />}
+                  {action.approved
+                    ? <Check size={11} className="text-white" strokeWidth={3} />
+                    : <Check size={11} className="text-neutral-500" strokeWidth={2} />
+                  }
                 </button>
                 <p className="text-sm text-neutral-300 leading-snug">{action.raw}</p>
               </div>
