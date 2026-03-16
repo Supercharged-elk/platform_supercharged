@@ -8,7 +8,7 @@ import { base64ToDataUrl } from "../../_shared/utils";
 export function Stage3Keyframes() {
   const {
     keyframes,
-    setKeyframePrompt,
+    setKeyframeImagePrompt,
     generateKeyframe,
     generateAllKeyframes,
     toggleKeyframeApproved,
@@ -100,8 +100,8 @@ export function Stage3Keyframes() {
             {/* Prompt editor */}
             <div className="p-3 space-y-2">
               <textarea
-                value={kf.prompt}
-                onChange={(e) => setKeyframePrompt(kf.id, e.target.value)}
+                value={kf.imagePrompt}
+                onChange={(e) => setKeyframeImagePrompt(kf.id, e.target.value)}
                 className="w-full text-xs bg-neutral-900 border border-neutral-700 rounded-lg p-2 text-neutral-300 resize-none focus:outline-none focus:border-indigo-500 nodrag nowheel"
                 rows={3}
                 placeholder="Describe the keyframe…"

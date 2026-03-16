@@ -16,19 +16,27 @@ import { base64ToDataUrl } from "../../_shared/utils";
 
 const KLING_MODEL = "kwaivgi/kling-v2.1";
 
-const ANALYSIS_PROMPT = `You are a creative director analyzing footage for an AI production pipeline.
+/**
+ * Stage 1: ask Gemini for a creative/art direction description based on
+ * reference footage. No action extraction — that comes from the designer
+ * in Stage 2.
+ */
+const ART_DIRECTION_PROMPT = `You are a creative director analyzing reference footage for an AI video production pipeline.
 
-Given the uploaded video(s), please:
-1. Describe the overall creative tone and visual style (2-3 sentences)
-2. List 4-6 key actions or moments you observe (one per line, starting with "ACTION: ")
-3. Suggest a brief visual treatment (1-2 sentences)
+Based on the uploaded video(s), produce a detailed art direction brief that describes:
+1. Overall visual style and aesthetic (2-3 sentences)
+2. Color palette and lighting treatment (1-2 sentences)
+3. Camera style and movement language (1-2 sentences)
+4. Mood, tone, and pacing (1-2 sentences)
+5. Any distinctive visual elements, textures, or motifs worth replicating
 
-Be specific about visual elements, camera movements, lighting, and mood.`;
+Be specific and evocative. This brief will guide image and video generation in subsequent steps.`;
 
 interface RealFootageStore {
   stage: RealFootageStage;
   videoSources: VideoSource[];
   creativeAnalysis: string;
+  actionsText: string;
   actions: DetectedAction[];
   keyframes: KeyframeItem[];
   videos: VideoItem[];
@@ -38,20 +46,22 @@ interface RealFootageStore {
   confirmAnalysis: () => void;
 
   // Stage 2
-  setActionEnriched: (id: string, enriched: string) => void;
+  setActionsText: (text: string) => void;
+  setActionImagePrompt: (id: string, imagePrompt: string) => void;
+  setActionVideoPrompt: (id: string, videoPrompt: string) => void;
   toggleActionApproved: (id: string) => void;
   enrichActions: () => Promise<void>;
   confirmActions: () => void;
 
   // Stage 3
-  setKeyframePrompt: (id: string, prompt: string) => void;
+  setKeyframeImagePrompt: (id: string, prompt: string) => void;
   generateKeyframe: (id: string) => Promise<void>;
   generateAllKeyframes: () => Promise<void>;
   toggleKeyframeApproved: (id: string) => void;
   confirmKeyframes: () => void;
 
   // Stage 4
-  generateVideo: (id: string, promptOverride?: string) => Promise<void>;
+  generateVideo: (id: string, videoPromptOverride?: string) => Promise<void>;
   generateAllVideos: () => Promise<void>;
 
   // Navigation
@@ -59,15 +69,6 @@ interface RealFootageStore {
 
   reset: () => void;
 }
-
-const INITIAL: Omit<RealFootageStore, keyof Omit<RealFootageStore, "stage" | "videoSources" | "creativeAnalysis" | "actions" | "keyframes" | "videos">> = {
-  stage: "upload",
-  videoSources: [],
-  creativeAnalysis: "",
-  actions: [],
-  keyframes: [],
-  videos: [],
-};
 
 const safeStorage = createJSONStorage(() => ({
   getItem: (name: string) => localStorage.getItem(name),
@@ -90,37 +91,34 @@ export const useRealFootage = create<RealFootageStore>()(
       stage: "upload",
       videoSources: [],
       creativeAnalysis: "",
+      actionsText: "",
       actions: [],
       keyframes: [],
       videos: [],
 
+      // ── Stage 1 ──────────────────────────────────────────────────────────
       analyzeVideo: async (sources) => {
-        const text = await analyzeVideos(sources, ANALYSIS_PROMPT);
-
-        const lines = text.split("\n");
-        const rawActions: string[] = [];
-        for (const line of lines) {
-          const match = line.match(/^ACTION:\s*(.+)/i);
-          if (match) rawActions.push(match[1].trim());
-        }
-
-        const actions: DetectedAction[] = rawActions.map((raw) => ({
-          id: nanoid(),
-          raw,
-          enriched: raw,
-          approved: true,
-        }));
-
+        // Gemini analyzes reference footage → returns art direction text only.
+        // Actions are NOT extracted here — the designer enters them in Stage 2.
+        const text = await analyzeVideos(sources, ART_DIRECTION_PROMPT);
         const uploadedAt = Date.now();
         const sourcesWithTimestamp = sources.map((s) => ({ ...s, uploadedAt }));
-        set({ videoSources: sourcesWithTimestamp, creativeAnalysis: text, actions });
+        set({ videoSources: sourcesWithTimestamp, creativeAnalysis: text });
       },
 
       confirmAnalysis: () => set({ stage: "actions" }),
 
-      setActionEnriched: (id, enriched) =>
+      // ── Stage 2 ──────────────────────────────────────────────────────────
+      setActionsText: (text) => set({ actionsText: text }),
+
+      setActionImagePrompt: (id, imagePrompt) =>
         set((s) => ({
-          actions: s.actions.map((a) => (a.id === id ? { ...a, enriched } : a)),
+          actions: s.actions.map((a) => (a.id === id ? { ...a, imagePrompt } : a)),
+        })),
+
+      setActionVideoPrompt: (id, videoPrompt) =>
+        set((s) => ({
+          actions: s.actions.map((a) => (a.id === id ? { ...a, videoPrompt } : a)),
         })),
 
       toggleActionApproved: (id) =>
@@ -131,66 +129,73 @@ export const useRealFootage = create<RealFootageStore>()(
         })),
 
       enrichActions: async () => {
-        const { actions, creativeAnalysis } = get();
+        const { actionsText, creativeAnalysis } = get();
+
+        // Parse actions: split by newlines, strip leading numbering/bullets, drop blanks
+        const rawLines = actionsText
+          .split("\n")
+          .map((l) => l.replace(/^[\d\.\-\*\•]+\s*/, "").trim())
+          .filter(Boolean);
+
+        if (!rawLines.length) return;
 
         const schema = {
           type: "object",
           properties: {
             items: {
               type: "array",
-              items: { type: "string" },
+              items: {
+                type: "object",
+                properties: {
+                  imagePrompt: { type: "string" },
+                  videoPrompt: { type: "string" },
+                },
+                required: ["imagePrompt", "videoPrompt"],
+                additionalProperties: false,
+              },
             },
           },
           required: ["items"],
           additionalProperties: false,
         };
 
-        const userPrompt = `You are a creative director. Based on this video analysis:
-
+        const userPrompt = `Art direction brief:
 ${creativeAnalysis}
 
-Enrich each action with cinematic detail (camera angle, lighting, color palette, mood, props). Max 60 words each.
+Actions to enrich (${rawLines.length} total):
+${rawLines.map((l, i) => `${i + 1}. ${l}`).join("\n")}
 
-Actions:
-${actions.map((a, i) => `${i + 1}. ${a.raw}`).join("\n")}
+For each action produce:
+- imagePrompt: a detailed prompt for an AI image generator (Gemini). Describe composition, lighting, color palette, mood, camera angle, visual style — in line with the art direction. Max 80 words.
+- videoPrompt: a detailed prompt for an AI video generator (Kling) that will animate the generated image. Describe motion, camera movement, timing, atmosphere. Max 60 words.
 
-Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one string per action, in the same order.`;
+Return one item per action in the same order.`;
 
         const result = await chatWithOpenAI(
           [
             {
               role: "system",
               content:
-                "You are a prompt engineer expert in cinematic photography direction and AI image generation. Your role is to enrich action descriptions with precise cinematographic detail.",
+                "You are a prompt engineer specialized in cinematic AI video production. You create precise, evocative prompts for image and video generation models.",
             },
-            {
-              role: "user",
-              content: userPrompt,
-            },
+            { role: "user", content: userPrompt },
           ],
           { model: "gpt-4o", schema }
         );
 
-        try {
-          // Handle both structured { items: [...] } and legacy bare JSON array string
-          let enriched: string[];
-          if (result && typeof result === "object" && Array.isArray((result as { items: string[] }).items)) {
-            enriched = (result as { items: string[] }).items;
-          } else {
-            const text = typeof result === "string" ? result : JSON.stringify(result);
-            const jsonMatch = text.match(/\[[\s\S]*\]/);
-            if (!jsonMatch) throw new Error("No array found in response");
-            enriched = JSON.parse(jsonMatch[0]);
-          }
-          set((s) => ({
-            actions: s.actions.map((a, i) => ({
-              ...a,
-              enriched: enriched[i] || a.enriched,
-            })),
-          }));
-        } catch {
-          // Keep originals on parse failure
-        }
+        const items = (
+          result as { items: { imagePrompt: string; videoPrompt: string }[] }
+        ).items;
+
+        const actions: DetectedAction[] = rawLines.map((raw, i) => ({
+          id: nanoid(),
+          raw,
+          imagePrompt: items[i]?.imagePrompt ?? raw,
+          videoPrompt: items[i]?.videoPrompt ?? raw,
+          approved: true,
+        }));
+
+        set({ actions });
       },
 
       confirmActions: () => {
@@ -198,7 +203,8 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
         const keyframes: KeyframeItem[] = approved.map((a) => ({
           id: nanoid(),
           actionId: a.id,
-          prompt: a.enriched,
+          imagePrompt: a.imagePrompt,
+          videoPrompt: a.videoPrompt,
           base64: null,
           mimeType: "image/jpeg",
           status: "idle",
@@ -207,9 +213,12 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
         set({ keyframes, stage: "keyframes" });
       },
 
-      setKeyframePrompt: (id, prompt) =>
+      // ── Stage 3 ──────────────────────────────────────────────────────────
+      setKeyframeImagePrompt: (id, prompt) =>
         set((s) => ({
-          keyframes: s.keyframes.map((k) => (k.id === id ? { ...k, prompt } : k)),
+          keyframes: s.keyframes.map((k) =>
+            k.id === id ? { ...k, imagePrompt: prompt } : k
+          ),
         })),
 
       generateKeyframe: async (id) => {
@@ -223,9 +232,7 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
         }));
 
         try {
-          const { base64, mimeType } = await generateImage(
-            `Cinematic keyframe for: ${item.prompt}. High quality, photorealistic, professional cinematography.`
-          );
+          const { base64, mimeType } = await generateImage(item.imagePrompt);
           set((s) => ({
             keyframes: s.keyframes.map((k) =>
               k.id === id ? { ...k, base64, mimeType, status: "done" } : k
@@ -242,7 +249,10 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
 
       generateAllKeyframes: async () => {
         const { keyframes, generateKeyframe } = get();
-        await pLimit(3, keyframes.filter((k) => k.status !== "done").map((k) => () => generateKeyframe(k.id)));
+        await pLimit(
+          3,
+          keyframes.filter((k) => k.status !== "done").map((k) => () => generateKeyframe(k.id))
+        );
       },
 
       toggleKeyframeApproved: (id) =>
@@ -253,27 +263,30 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
         })),
 
       confirmKeyframes: () => {
-        const done = get().keyframes.filter((k) => k.status === "done" && k.approved && k.base64);
+        const done = get().keyframes.filter(
+          (k) => k.status === "done" && k.approved && k.base64
+        );
         const videos: VideoItem[] = done.map((k) => ({
           id: nanoid(),
           keyframeId: k.id,
           base64: k.base64!,
-          prompt: k.prompt,
+          imagePrompt: k.imagePrompt,
+          videoPrompt: k.videoPrompt,
           videoUrl: null,
           status: "idle",
         }));
         set({ videos, stage: "videos" });
       },
 
-      generateVideo: async (id, promptOverride) => {
+      // ── Stage 4 ──────────────────────────────────────────────────────────
+      generateVideo: async (id, videoPromptOverride) => {
         const item = get().videos.find((v) => v.id === id);
         if (!item) return;
 
-        // Persist prompt override to store before generating
-        if (promptOverride !== undefined) {
+        if (videoPromptOverride !== undefined) {
           set((s) => ({
             videos: s.videos.map((v) =>
-              v.id === id ? { ...v, prompt: promptOverride } : v
+              v.id === id ? { ...v, videoPrompt: videoPromptOverride } : v
             ),
           }));
         }
@@ -284,7 +297,7 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
           ),
         }));
 
-        const effectivePrompt = promptOverride ?? item.prompt;
+        const effectivePrompt = videoPromptOverride ?? item.videoPrompt;
 
         try {
           const startImage = base64ToDataUrl(item.base64, "image/jpeg");
@@ -310,9 +323,13 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
 
       generateAllVideos: async () => {
         const { videos, generateVideo } = get();
-        await pLimit(3, videos.filter((v) => v.status !== "done").map((v) => () => generateVideo(v.id)));
+        await pLimit(
+          3,
+          videos.filter((v) => v.status !== "done").map((v) => () => generateVideo(v.id))
+        );
       },
 
+      // ── Navigation ───────────────────────────────────────────────────────
       goBack: () => {
         const { stage } = get();
         if (stage === "actions") set({ stage: "upload" });
@@ -325,6 +342,7 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
           stage: "upload",
           videoSources: [],
           creativeAnalysis: "",
+          actionsText: "",
           actions: [],
           keyframes: [],
           videos: [],
@@ -337,6 +355,7 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
         stage: s.stage,
         videoSources: s.videoSources,
         creativeAnalysis: s.creativeAnalysis,
+        actionsText: s.actionsText,
         actions: s.actions,
         keyframes: s.keyframes,
         videos: s.videos,

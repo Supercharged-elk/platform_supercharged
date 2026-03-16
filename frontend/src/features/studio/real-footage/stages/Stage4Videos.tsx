@@ -9,9 +9,9 @@ import { base64ToDataUrl } from "../../_shared/utils";
 export function Stage4Videos() {
   const { videos, generateVideo, generateAllVideos, goBack } = useRealFootage();
 
-  // Local per-card editable prompts — initialized from vid.prompt
+  // Local per-card editable prompts — initialized from vid.videoPrompt
   const [localPrompts, setLocalPrompts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(videos.map((v) => [v.id, v.prompt]))
+    Object.fromEntries(videos.map((v) => [v.id, v.videoPrompt]))
   );
 
   const doneCount = videos.filter((v) => v.status === "done").length;
@@ -108,7 +108,7 @@ export function Stage4Videos() {
             {/* Editable prompt + generate button */}
             <div className="p-3 space-y-2">
               <textarea
-                value={localPrompts[vid.id] ?? vid.prompt}
+                value={localPrompts[vid.id] ?? vid.videoPrompt}
                 onChange={(e) => setLocalPrompt(vid.id, e.target.value)}
                 className="w-full text-xs bg-neutral-900 border border-neutral-700 rounded-lg p-2 text-neutral-300 resize-none focus:outline-none focus:border-indigo-500 nodrag nowheel"
                 rows={2}
