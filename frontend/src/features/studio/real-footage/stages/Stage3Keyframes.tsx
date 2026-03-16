@@ -30,18 +30,30 @@ export function Stage3Keyframes() {
             Generate Keyframes
           </h2>
           <p className="text-sm text-neutral-400 mt-1">
-            Edit each prompt, generate keyframe images, then approve the ones you want to animate.
+            Edit each prompt and generate. Images auto-save — approve the ones you want to animate.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void generateAllKeyframes()}
-          disabled={anyGenerating}
-          className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition disabled:opacity-50"
-        >
-          <Sparkles size={14} />
-          Generate All
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => void generateAllKeyframes()}
+            disabled={anyGenerating}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition disabled:opacity-50"
+          >
+            <Sparkles size={14} />
+            Generate All
+          </button>
+          {approvedDoneCount > 0 && !anyGenerating && (
+            <button
+              type="button"
+              onClick={confirmKeyframes}
+              className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition"
+            >
+              Animate {approvedDoneCount} Keyframe{approvedDoneCount !== 1 ? "s" : ""}
+              <ChevronRight size={15} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -108,33 +120,40 @@ export function Stage3Keyframes() {
               />
 
               <div className="flex items-center gap-2">
-                {kf.status !== "generating" && kf.status !== "done" && (
+                {/* Generate (idle/error) or Regenerate (done) */}
+                {kf.status !== "generating" && (
                   <button
                     type="button"
                     onClick={() => void generateKeyframe(kf.id)}
-                    className="flex-1 py-1.5 text-xs rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition"
+                    className={[
+                      "flex items-center gap-1.5 flex-1 justify-center py-1.5 text-xs rounded-lg font-medium transition",
+                      kf.status === "done"
+                        ? "bg-neutral-700 hover:bg-neutral-600 text-neutral-300"
+                        : "bg-indigo-600 hover:bg-indigo-500 text-white",
+                    ].join(" ")}
                   >
-                    Generate
+                    {kf.status === "done" && <RefreshCw size={11} />}
+                    {kf.status === "done" ? "Regenerate" : "Generate"}
                   </button>
                 )}
 
-                {/* Approve toggle — always shown, disabled until done */}
+                {/* Approve toggle — enabled only when done */}
                 <button
                   type="button"
                   onClick={() => toggleKeyframeApproved(kf.id)}
                   disabled={kf.status !== "done"}
-                  title={kf.status !== "done" ? "Generate keyframe first" : kf.approved ? "Unapprove" : "Approve for animation"}
+                  title={kf.status !== "done" ? "Generate first" : kf.approved ? "Unapprove" : "Approve for animation"}
                   className={[
                     "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition",
                     kf.status === "done" && kf.approved
-                      ? "bg-emerald-600 text-white"
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
                       : kf.status === "done"
-                      ? "bg-neutral-700 text-neutral-400 hover:bg-neutral-600 hover:text-neutral-200"
-                      : "bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-50",
+                      ? "bg-neutral-700 border border-neutral-500 text-neutral-300 hover:border-emerald-500 hover:text-emerald-300"
+                      : "bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-40",
                   ].join(" ")}
                 >
                   <Check size={11} strokeWidth={kf.approved ? 3 : 2} />
-                  {kf.approved && kf.status === "done" ? "Approved" : "Approve"}
+                  {kf.status === "done" && kf.approved ? "Approved" : "Approve"}
                 </button>
               </div>
             </div>
