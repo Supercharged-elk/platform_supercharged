@@ -104,9 +104,21 @@ Slow pan across a city skyline at dusk"
       {/* Enriched action cards */}
       {!loading && actions.length > 0 && (
         <div className="space-y-3">
-          <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
-            Enriched Actions — review & edit
-          </p>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
+              Enriched Actions — review & edit
+            </p>
+            {approvedCount > 0 && (
+              <button
+                type="button"
+                onClick={confirmActions}
+                className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition"
+              >
+                Generate Keyframes for {approvedCount} Action{approvedCount !== 1 ? "s" : ""}
+                <ChevronRight size={15} />
+              </button>
+            )}
+          </div>
           {actions.map((action) => (
             <div
               key={action.id}
