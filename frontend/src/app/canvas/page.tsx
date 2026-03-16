@@ -15,7 +15,7 @@ import { OnboardingBanner } from "@/components/canvas/OnboardingBanner";
 import { useCanvasStore } from "@/store/canvas";
 import { api } from "@/lib/api";
 import Link from "next/link";
-import { LayoutGrid, FilePlus, Clock } from "lucide-react";
+import { LayoutGrid, FilePlus, Clock, Clapperboard } from "lucide-react";
 
 interface WorkflowPayload {
   id: string;
@@ -118,6 +118,13 @@ function CanvasPageContent() {
             >
               <Clock size={12} />
               History
+            </Link>
+            <Link
+              href="/studio"
+              className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-300 transition"
+            >
+              <Clapperboard size={12} />
+              Studio
             </Link>
             <button
               type="button"

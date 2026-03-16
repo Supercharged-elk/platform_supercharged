@@ -1,0 +1,106 @@
+/** Convert a File to a base64 string (without data: prefix) */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Convert a File to a full data URL */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Convert base64 to a data URL */
+export function base64ToDataUrl(base64: string, mimeType = "image/jpeg"): string {
+  return `data:${mimeType};base64,${base64}`;
+}
+
+/**
+ * Extract N evenly-spaced frames from a video File.
+ * Returns array of base64 JPEG strings (no data: prefix).
+ * Must run in browser (uses HTMLVideoElement + Canvas API).
+ */
+export function extractVideoFrames(file: File, count = 4): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const objectUrl = URL.createObjectURL(file);
+    video.src = objectUrl;
+    video.crossOrigin = "anonymous";
+    video.preload = "metadata";
+
+    video.onloadedmetadata = () => {
+      const duration = video.duration;
+      const times = Array.from({ length: count }, (_, i) =>
+        (duration / (count + 1)) * (i + 1)
+      );
+
+      const frames: string[] = new Array(count).fill("");
+      let remaining = count;
+
+      times.forEach((time, index) => {
+        const vid = document.createElement("video");
+        vid.src = objectUrl;
+        vid.crossOrigin = "anonymous";
+        vid.currentTime = time;
+
+        vid.onseeked = () => {
+          const canvas = document.createElement("canvas");
+          const maxW = 640;
+          const scale = Math.min(1, maxW / vid.videoWidth);
+          canvas.width = Math.round(vid.videoWidth * scale);
+          canvas.height = Math.round(vid.videoHeight * scale);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            remaining--;
+            if (remaining === 0) {
+              URL.revokeObjectURL(objectUrl);
+              resolve(frames.filter(Boolean));
+            }
+            return;
+          }
+          ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+          frames[index] = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+          remaining--;
+          if (remaining === 0) {
+            URL.revokeObjectURL(objectUrl);
+            resolve(frames.filter(Boolean));
+          }
+        };
+
+        vid.onerror = () => {
+          remaining--;
+          if (remaining === 0) {
+            URL.revokeObjectURL(objectUrl);
+            resolve(frames.filter(Boolean));
+          }
+        };
+      });
+    };
+
+    video.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to load video"));
+    };
+  });
+}
+
+/** Sleep for ms milliseconds */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Generate a simple random ID */
+export function nanoid(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
