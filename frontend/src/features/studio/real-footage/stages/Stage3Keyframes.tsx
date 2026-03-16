@@ -37,7 +37,7 @@ export function Stage3Keyframes() {
           {doneCount > 0 && (
             <button
               type="button"
-              onClick={() => void downloadAllBase64(
+              onClick={() => downloadAllBase64(
                 keyframes
                   .filter((k) => k.status === "done" && k.base64)
                   .map((k, i) => ({

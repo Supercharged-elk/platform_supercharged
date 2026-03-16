@@ -105,20 +105,22 @@ export function downloadBase64(base64: string, mimeType: string, filename: strin
   const a = document.createElement("a");
   a.href = `data:${mimeType};base64,${base64}`;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
 }
 
 /**
- * Trigger sequential downloads for multiple base64 files.
- * Uses a 300 ms delay between each to avoid browser pop-up blocking.
+ * Trigger staggered downloads for multiple base64 files.
+ * Uses setTimeout (not await) so each download fires in its own task,
+ * avoiding browsers blocking downloads that occur inside async continuations.
  */
-export async function downloadAllBase64(
+export function downloadAllBase64(
   items: { base64: string; mimeType: string; filename: string }[]
-): Promise<void> {
-  for (let i = 0; i < items.length; i++) {
-    downloadBase64(items[i].base64, items[i].mimeType, items[i].filename);
-    if (i < items.length - 1) await sleep(300);
-  }
+): void {
+  items.forEach((item, i) => {
+    setTimeout(() => downloadBase64(item.base64, item.mimeType, item.filename), i * 400);
+  });
 }
 
 /** Generate a simple random ID */
