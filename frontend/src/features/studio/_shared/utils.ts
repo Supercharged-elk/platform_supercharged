@@ -100,26 +100,39 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Trigger a browser download for a base64-encoded file */
+/**
+ * Trigger a browser download for a base64-encoded file.
+ * Uses Blob + createObjectURL — reliable for large files (1-2 MB+).
+ * data: URLs fail silently in Chrome/Safari above ~1 MB.
+ */
 export function downloadBase64(base64: string, mimeType: string, filename: string): void {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: mimeType });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = `data:${mimeType};base64,${base64}`;
+  a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  // Revoke after a short delay so the browser has time to start the download
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /**
  * Trigger staggered downloads for multiple base64 files.
- * Uses setTimeout (not await) so each download fires in its own task,
- * avoiding browsers blocking downloads that occur inside async continuations.
+ * Uses setTimeout (not await) so the browser's user-gesture context is
+ * preserved for each individual download.
  */
 export function downloadAllBase64(
   items: { base64: string; mimeType: string; filename: string }[]
 ): void {
   items.forEach((item, i) => {
-    setTimeout(() => downloadBase64(item.base64, item.mimeType, item.filename), i * 400);
+    setTimeout(() => downloadBase64(item.base64, item.mimeType, item.filename), i * 600);
   });
 }
 
