@@ -1,0 +1,23 @@
+{
+  "name": "canvas-platform",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:e2e:demo": "node scripts/e2e_demo_pipeline.js",
+    "db:reset:dry": "node scripts/reset_and_seed_supabase.mjs --dry-run",
+    "db:reset": "node scripts/reset_and_seed_supabase.mjs --confirm=RESET",
+    "db:reset:full": "node scripts/reset_and_seed_supabase.mjs --full --confirm=RESET",
+    "db:reset:seed": "node scripts/reset_and_seed_supabase.mjs --seed-demo --confirm=RESET",
+    "test:e2e:canvas": "npx playwright test",
+    "test:real:features": "node scripts/run_real_feature_once.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}
