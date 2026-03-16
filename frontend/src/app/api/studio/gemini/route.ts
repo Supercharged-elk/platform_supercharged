@@ -94,15 +94,15 @@ export async function POST(req: NextRequest) {
     try {
       const data = await callGemini(IMAGE_MODEL, apiKey, [{ text: prompt }], ["IMAGE", "TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
-      const imgPart = responseParts.find(
-        (p: { inline_data?: { data: string; mime_type: string } }) => p.inline_data
-      );
-      if (!imgPart) {
+      // Gemini returns camelCase `inlineData` (not snake_case `inline_data`)
+      type ImgPart = { inlineData?: { data: string; mimeType: string } };
+      const imgPart = responseParts.find((p: ImgPart) => p.inlineData) as ImgPart | undefined;
+      if (!imgPart?.inlineData) {
         return NextResponse.json({ error: "No image returned from Gemini" }, { status: 500 });
       }
       return NextResponse.json({
-        base64: imgPart.inline_data.data,
-        mimeType: imgPart.inline_data.mime_type,
+        base64: imgPart.inlineData.data,
+        mimeType: imgPart.inlineData.mimeType,
       });
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });
@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
       mimeType,
     } = body as ColorizePayload;
 
+    // Input uses snake_case inline_data (Gemini REST request format)
     const parts: unknown[] = [
       { text: prompt },
       { inline_data: { mime_type: mimeType ?? "image/jpeg", data: imageBase64 } },
@@ -125,15 +126,15 @@ export async function POST(req: NextRequest) {
     try {
       const data = await callGemini(IMAGE_MODEL, apiKey, parts, ["IMAGE", "TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
-      const imgPart = responseParts.find(
-        (p: { inline_data?: { data: string; mime_type: string } }) => p.inline_data
-      );
-      if (!imgPart) {
+      // Gemini returns camelCase `inlineData` (not snake_case `inline_data`)
+      type ImgPart = { inlineData?: { data: string; mimeType: string } };
+      const imgPart = responseParts.find((p: ImgPart) => p.inlineData) as ImgPart | undefined;
+      if (!imgPart?.inlineData) {
         return NextResponse.json({ error: "No colorized image returned from Gemini" }, { status: 500 });
       }
       return NextResponse.json({
-        base64: imgPart.inline_data.data,
-        mimeType: imgPart.inline_data.mime_type,
+        base64: imgPart.inlineData.data,
+        mimeType: imgPart.inlineData.mimeType,
       });
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });

@@ -14,7 +14,7 @@ import { chatWithOpenAI } from "../../_shared/services/openai";
 import { waitForPrediction } from "../../_shared/services/replicate";
 import { base64ToDataUrl } from "../../_shared/utils";
 
-const KLING_MODEL = "kwaivgi/kling-v2-master";
+const KLING_MODEL = "kwaivgi/kling-v2.1";
 
 const ANALYSIS_PROMPT = `You are a creative director analyzing footage for an AI production pipeline.
 
@@ -289,10 +289,10 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
         try {
           const startImage = base64ToDataUrl(item.base64, "image/jpeg");
           const videoUrl = await waitForPrediction(KLING_MODEL, {
+            mode: "standard",
             start_image: startImage,
             prompt: effectivePrompt,
             duration: 5,
-            aspect_ratio: "16:9",
           });
           set((s) => ({
             videos: s.videos.map((v) =>

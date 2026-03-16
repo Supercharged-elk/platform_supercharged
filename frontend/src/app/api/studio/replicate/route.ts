@@ -20,14 +20,19 @@ export async function POST(req: NextRequest) {
 
   const { model, input } = body;
 
-  const res = await fetch("https://api.replicate.com/v1/predictions", {
+  // Use the model-specific endpoint (/v1/models/{owner}/{name}/predictions)
+  // which doesn't require a pinned version ID.
+  const [owner, name] = model.split("/");
+  const url = `https://api.replicate.com/v1/models/${owner}/${name}/predictions`;
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
       Prefer: "wait=5",
     },
-    body: JSON.stringify({ model, input }),
+    body: JSON.stringify({ input }),
   });
 
   if (!res.ok) {
