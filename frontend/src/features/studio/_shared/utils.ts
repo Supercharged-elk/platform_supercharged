@@ -100,6 +100,27 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Trigger a browser download for a base64-encoded file */
+export function downloadBase64(base64: string, mimeType: string, filename: string): void {
+  const a = document.createElement("a");
+  a.href = `data:${mimeType};base64,${base64}`;
+  a.download = filename;
+  a.click();
+}
+
+/**
+ * Trigger sequential downloads for multiple base64 files.
+ * Uses a 300 ms delay between each to avoid browser pop-up blocking.
+ */
+export async function downloadAllBase64(
+  items: { base64: string; mimeType: string; filename: string }[]
+): Promise<void> {
+  for (let i = 0; i < items.length; i++) {
+    downloadBase64(items[i].base64, items[i].mimeType, items[i].filename);
+    if (i < items.length - 1) await sleep(300);
+  }
+}
+
 /** Generate a simple random ID */
 export function nanoid(): string {
   return Math.random().toString(36).slice(2, 10);

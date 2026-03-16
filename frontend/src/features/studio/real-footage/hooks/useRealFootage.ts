@@ -200,16 +200,29 @@ Return one item per action in the same order.`;
 
       confirmActions: () => {
         const approved = get().actions.filter((a) => a.approved);
-        const keyframes: KeyframeItem[] = approved.map((a) => ({
-          id: nanoid(),
-          actionId: a.id,
-          imagePrompt: a.imagePrompt,
-          videoPrompt: a.videoPrompt,
-          base64: null,
-          mimeType: "image/jpeg",
-          status: "idle",
-          approved: false,
-        }));
+        const existing = get().keyframes;
+
+        // Preserve any keyframe that was already generated for the same action.
+        // Only reset to idle if the action has no prior work.
+        const keyframes: KeyframeItem[] = approved.map((a) => {
+          const prev = existing.find(
+            (k) => k.actionId === a.id && k.status === "done" && k.base64
+          );
+          if (prev) {
+            // Keep generated image; pick up any prompt edits from Stage 2
+            return { ...prev, imagePrompt: a.imagePrompt, videoPrompt: a.videoPrompt };
+          }
+          return {
+            id: nanoid(),
+            actionId: a.id,
+            imagePrompt: a.imagePrompt,
+            videoPrompt: a.videoPrompt,
+            base64: null,
+            mimeType: "image/jpeg",
+            status: "idle",
+            approved: false,
+          };
+        });
         set({ keyframes, stage: "keyframes" });
       },
 
@@ -357,8 +370,20 @@ Return one item per action in the same order.`;
         creativeAnalysis: s.creativeAnalysis,
         actionsText: s.actionsText,
         actions: s.actions,
-        keyframes: s.keyframes,
-        videos: s.videos,
+        // base64 images/videos are excluded from localStorage (too large, ~1-2 MB each).
+        // They survive within the same browser session via in-memory store.
+        // On page refresh, status resets to "idle" so the user can regenerate.
+        keyframes: s.keyframes.map((k) => ({
+          ...k,
+          base64: null,
+          status: (k.status === "done" ? "idle" : k.status) as KeyframeItem["status"],
+          approved: false,
+        })),
+        videos: s.videos.map((v) => ({
+          ...v,
+          base64: "",
+          status: (v.status === "done" ? "idle" : v.status) as VideoItem["status"],
+        })),
       }),
     }
   )

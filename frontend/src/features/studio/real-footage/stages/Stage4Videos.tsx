@@ -32,15 +32,36 @@ export function Stage4Videos() {
             Each keyframe is animated into a 5-second video clip using Kling AI.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void generateAllVideos()}
-          disabled={anyGenerating}
-          className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition disabled:opacity-50"
-        >
-          <Play size={14} />
-          Generate All Videos
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {doneCount > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                videos
+                  .filter((v) => v.status === "done" && v.videoUrl)
+                  .forEach((v, i) => {
+                    const a = document.createElement("a");
+                    a.href = v.videoUrl!;
+                    a.download = `video-${i + 1}.mp4`;
+                    setTimeout(() => a.click(), i * 400);
+                  });
+              }}
+              className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition"
+            >
+              <Download size={14} />
+              Download All ({doneCount})
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void generateAllVideos()}
+            disabled={anyGenerating}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition disabled:opacity-50"
+          >
+            <Play size={14} />
+            Generate All
+          </button>
+        </div>
       </div>
 
       {doneCount === videos.length && doneCount > 0 && (

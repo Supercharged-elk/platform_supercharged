@@ -1,9 +1,9 @@
 "use client";
-import { RefreshCw, ImageIcon, ChevronRight, Sparkles, Check, ArrowLeft } from "lucide-react";
+import { RefreshCw, ImageIcon, ChevronRight, Sparkles, Check, ArrowLeft, Download } from "lucide-react";
 import { useRealFootage } from "../hooks/useRealFootage";
 import { GeneratingState } from "../../_shared/GeneratingState";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
-import { base64ToDataUrl } from "../../_shared/utils";
+import { base64ToDataUrl, downloadBase64, downloadAllBase64 } from "../../_shared/utils";
 
 export function Stage3Keyframes() {
   const {
@@ -34,6 +34,24 @@ export function Stage3Keyframes() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {doneCount > 0 && (
+            <button
+              type="button"
+              onClick={() => void downloadAllBase64(
+                keyframes
+                  .filter((k) => k.status === "done" && k.base64)
+                  .map((k, i) => ({
+                    base64: k.base64!,
+                    mimeType: k.mimeType,
+                    filename: `keyframe-${i + 1}.png`,
+                  }))
+              )}
+              className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition"
+            >
+              <Download size={14} />
+              Download All ({doneCount})
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void generateAllKeyframes()}
@@ -96,16 +114,26 @@ export function Stage3Keyframes() {
                 </div>
               )}
 
-              {/* Regenerate button overlay */}
-              {kf.status === "done" && (
-                <button
-                  type="button"
-                  onClick={() => void generateKeyframe(kf.id)}
-                  className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white transition"
-                  title="Regenerate"
-                >
-                  <RefreshCw size={13} />
-                </button>
+              {/* Image overlay buttons */}
+              {kf.status === "done" && kf.base64 && (
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => downloadBase64(kf.base64!, kf.mimeType, `keyframe-${kf.id}.png`)}
+                    className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white transition"
+                    title="Download"
+                  >
+                    <Download size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void generateKeyframe(kf.id)}
+                    className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white transition"
+                    title="Regenerate"
+                  >
+                    <RefreshCw size={13} />
+                  </button>
+                </div>
               )}
             </div>
 
