@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 /** Text analysis model for vision and video tasks */
-const ANALYSIS_MODEL = "gemini-2.0-flash";
+const ANALYSIS_MODEL = "gemini-2.5-flash";
 /** Image generation model for generate and colorize tasks */
-const IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation";
+const IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 
 type GeminiMode = "vision" | "generate" | "colorize" | "video";
 
