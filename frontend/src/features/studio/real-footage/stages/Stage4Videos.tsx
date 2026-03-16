@@ -4,7 +4,7 @@ import { Download, RefreshCw, Video, Play, ArrowLeft } from "lucide-react";
 import { useRealFootage } from "../hooks/useRealFootage";
 import { GeneratingState } from "../../_shared/GeneratingState";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
-import { base64ToDataUrl } from "../../_shared/utils";
+import { base64ToDataUrl, downloadAsZip } from "../../_shared/utils";
 
 export function Stage4Videos() {
   const { videos, generateVideo, generateAllVideos, goBack } = useRealFootage();
@@ -37,14 +37,12 @@ export function Stage4Videos() {
             <button
               type="button"
               onClick={() => {
-                videos
-                  .filter((v) => v.status === "done" && v.videoUrl)
-                  .forEach((v, i) => {
-                    const a = document.createElement("a");
-                    a.href = v.videoUrl!;
-                    a.download = `video-${i + 1}.mp4`;
-                    setTimeout(() => a.click(), i * 400);
-                  });
+                const done = videos.filter((v) => v.status === "done" && v.videoUrl);
+                void downloadAsZip(
+                  done.map((v) => ({ url: v.videoUrl! })),
+                  done.map((_, i) => `video-${i + 1}.mp4`),
+                  "videos.zip"
+                );
               }}
               className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition"
             >

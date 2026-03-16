@@ -132,47 +132,40 @@ export async function downloadBase64(
 }
 
 /**
- * Download multiple base64 files.
- * Pre-fetches all blobs in parallel, then staggers the <a> clicks
- * so browsers don't block them as popups.
+ * Bundle multiple files into a ZIP and trigger a single download.
+ * Accepts base64 strings (images) or remote URLs (videos).
  */
-export async function downloadAllBase64(
-  items: { base64: string; mimeType: string; filename: string }[]
+export async function downloadAsZip(
+  items: ({ base64: string; mimeType: string } | { url: string })[],
+  filenames: string[],
+  zipFilename: string
 ): Promise<void> {
-  // Fetch all blobs in parallel
-  const blobs = await Promise.all(
-    items.map(async (item) => {
-      const res = await fetch("/api/studio/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(item),
-      });
-      if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
-      return { blob: await res.blob(), filename: item.filename };
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+
+  await Promise.all(
+    items.map(async (item, i) => {
+      const filename = filenames[i];
+      if ("base64" in item) {
+        zip.file(filename, item.base64, { base64: true });
+      } else {
+        const res = await fetch(item.url);
+        const blob = await res.blob();
+        zip.file(filename, blob);
+      }
     })
   );
 
-  // Create all object URLs up front
-  const entries = blobs.map(({ blob, filename }) => ({
-    url: URL.createObjectURL(blob),
-    filename,
-  }));
-
-  // Stagger the click triggers
-  entries.forEach(({ url, filename }, i) => {
-    setTimeout(() => {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      if (i === entries.length - 1) {
-        setTimeout(() => entries.forEach((e) => URL.revokeObjectURL(e.url)), 5000);
-      }
-    }, i * 600);
-  });
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = zipFilename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
 /** Generate a simple random ID */
