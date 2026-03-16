@@ -39,11 +39,11 @@ export function Stage3Keyframes() {
               type="button"
               onClick={() => {
                 const done = keyframes.filter((k) => k.status === "done" && k.base64);
-                void downloadAsZip(
+                downloadAsZip(
                   done.map((k) => ({ base64: k.base64!, mimeType: k.mimeType })),
                   done.map((_, i) => `keyframe-${i + 1}.jpg`),
                   "keyframes.zip"
-                );
+                ).catch(console.error);
               }}
               className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition"
             >

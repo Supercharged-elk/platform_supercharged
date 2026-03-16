@@ -1,3 +1,5 @@
+import JSZip from "jszip";
+
 /** Convert a File to a base64 string (without data: prefix) */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -140,7 +142,6 @@ export async function downloadAsZip(
   filenames: string[],
   zipFilename: string
 ): Promise<void> {
-  const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
 
   await Promise.all(

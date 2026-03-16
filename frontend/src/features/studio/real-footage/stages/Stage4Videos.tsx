@@ -38,11 +38,11 @@ export function Stage4Videos() {
               type="button"
               onClick={() => {
                 const done = videos.filter((v) => v.status === "done" && v.videoUrl);
-                void downloadAsZip(
+                downloadAsZip(
                   done.map((v) => ({ url: v.videoUrl! })),
                   done.map((_, i) => `video-${i + 1}.mp4`),
                   "videos.zip"
-                );
+                ).catch(console.error);
               }}
               className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition"
             >
