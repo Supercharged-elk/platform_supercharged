@@ -1,6 +1,6 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   RealFootageStage,
   VideoSource,
@@ -8,7 +8,7 @@ import type {
   KeyframeItem,
   VideoItem,
 } from "../types";
-import { nanoid } from "../../_shared/utils";
+import { nanoid, pLimit } from "../../_shared/utils";
 import { analyzeVideos, generateImage } from "../../_shared/services/gemini";
 import { chatWithOpenAI } from "../../_shared/services/openai";
 import { waitForPrediction } from "../../_shared/services/replicate";
@@ -69,6 +69,21 @@ const INITIAL: Omit<RealFootageStore, keyof Omit<RealFootageStore, "stage" | "vi
   videos: [],
 };
 
+const safeStorage = createJSONStorage(() => ({
+  getItem: (name: string) => localStorage.getItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "QuotaExceededError") {
+        console.warn("[Studio] localStorage quota exceeded — state not persisted");
+        window.dispatchEvent(new CustomEvent("studio:storage-full"));
+      }
+    }
+  },
+  removeItem: (name: string) => localStorage.removeItem(name),
+}));
+
 export const useRealFootage = create<RealFootageStore>()(
   persist(
     (set, get) => ({
@@ -96,7 +111,9 @@ export const useRealFootage = create<RealFootageStore>()(
           approved: true,
         }));
 
-        set({ videoSources: sources, creativeAnalysis: text, actions });
+        const uploadedAt = Date.now();
+        const sourcesWithTimestamp = sources.map((s) => ({ ...s, uploadedAt }));
+        set({ videoSources: sourcesWithTimestamp, creativeAnalysis: text, actions });
       },
 
       confirmAnalysis: () => set({ stage: "actions" }),
@@ -116,6 +133,18 @@ export const useRealFootage = create<RealFootageStore>()(
       enrichActions: async () => {
         const { actions, creativeAnalysis } = get();
 
+        const schema = {
+          type: "object",
+          properties: {
+            items: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+          required: ["items"],
+          additionalProperties: false,
+        };
+
         const userPrompt = `You are a creative director. Based on this video analysis:
 
 ${creativeAnalysis}
@@ -125,7 +154,7 @@ Enrich each action with cinematic detail (camera angle, lighting, color palette,
 Actions:
 ${actions.map((a, i) => `${i + 1}. ${a.raw}`).join("\n")}
 
-Respond with ONLY a JSON array of strings, one per action, in the same order.`;
+Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one string per action, in the same order.`;
 
         const result = await chatWithOpenAI(
           [
@@ -139,23 +168,26 @@ Respond with ONLY a JSON array of strings, one per action, in the same order.`;
               content: userPrompt,
             },
           ],
-          { model: "gpt-4o" }
+          { model: "gpt-4o", schema }
         );
 
-        // chatWithOpenAI returns string | Record<string, unknown> — treat as string for JSON extraction
-        const text = typeof result === "string" ? result : JSON.stringify(result);
-
         try {
-          const jsonMatch = text.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            const enriched: string[] = JSON.parse(jsonMatch[0]);
-            set((s) => ({
-              actions: s.actions.map((a, i) => ({
-                ...a,
-                enriched: enriched[i] || a.enriched,
-              })),
-            }));
+          // Handle both structured { items: [...] } and legacy bare JSON array string
+          let enriched: string[];
+          if (result && typeof result === "object" && Array.isArray((result as { items: string[] }).items)) {
+            enriched = (result as { items: string[] }).items;
+          } else {
+            const text = typeof result === "string" ? result : JSON.stringify(result);
+            const jsonMatch = text.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) throw new Error("No array found in response");
+            enriched = JSON.parse(jsonMatch[0]);
           }
+          set((s) => ({
+            actions: s.actions.map((a, i) => ({
+              ...a,
+              enriched: enriched[i] || a.enriched,
+            })),
+          }));
         } catch {
           // Keep originals on parse failure
         }
@@ -210,9 +242,7 @@ Respond with ONLY a JSON array of strings, one per action, in the same order.`;
 
       generateAllKeyframes: async () => {
         const { keyframes, generateKeyframe } = get();
-        await Promise.all(
-          keyframes.filter((k) => k.status !== "done").map((k) => generateKeyframe(k.id))
-        );
+        await pLimit(3, keyframes.filter((k) => k.status !== "done").map((k) => () => generateKeyframe(k.id)));
       },
 
       toggleKeyframeApproved: (id) =>
@@ -280,9 +310,7 @@ Respond with ONLY a JSON array of strings, one per action, in the same order.`;
 
       generateAllVideos: async () => {
         const { videos, generateVideo } = get();
-        await Promise.all(
-          videos.filter((v) => v.status !== "done").map((v) => generateVideo(v.id))
-        );
+        await pLimit(3, videos.filter((v) => v.status !== "done").map((v) => () => generateVideo(v.id)));
       },
 
       goBack: () => {
@@ -304,6 +332,7 @@ Respond with ONLY a JSON array of strings, one per action, in the same order.`;
     }),
     {
       name: "studio-real-footage",
+      storage: safeStorage,
       partialize: (s) => ({
         stage: s.stage,
         videoSources: s.videoSources,

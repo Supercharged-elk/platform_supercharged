@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-/** Single model for all Gemini tasks: analysis, image generation, colorization */
-const MODEL = "gemini-3.1-flash-image";
+/** Text analysis model for vision and video tasks */
+const ANALYSIS_MODEL = "gemini-2.0-flash";
+/** Image generation model for generate and colorize tasks */
+const IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation";
 
 type GeminiMode = "vision" | "generate" | "colorize" | "video";
 
@@ -21,6 +23,7 @@ interface ColorizePayload {
   mode: "colorize";
   imageBase64: string; // base64 without prefix
   prompt?: string;
+  mimeType?: string;
 }
 
 interface VideoPayload {
@@ -32,15 +35,15 @@ interface VideoPayload {
 
 type RequestPayload = VisionPayload | GeneratePayload | ColorizePayload | VideoPayload;
 
-async function callGemini(apiKey: string, parts: unknown[]) {
+async function callGemini(model: string, apiKey: string, parts: unknown[], modalities: string[]) {
   const res = await fetch(
-    `${GEMINI_BASE}/models/${MODEL}:generateContent?key=${apiKey}`,
+    `${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+        generationConfig: { responseModalities: modalities },
       }),
     }
   );
@@ -75,7 +78,7 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const data = await callGemini(apiKey, parts);
+      const data = await callGemini(ANALYSIS_MODEL, apiKey, parts, ["TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
       const text = responseParts.find((p: { text?: string }) => p.text)?.text ?? "";
       return NextResponse.json({ text });
@@ -89,7 +92,7 @@ export async function POST(req: NextRequest) {
     const { prompt } = body as GeneratePayload;
 
     try {
-      const data = await callGemini(apiKey, [{ text: prompt }]);
+      const data = await callGemini(IMAGE_MODEL, apiKey, [{ text: prompt }], ["IMAGE", "TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
       const imgPart = responseParts.find(
         (p: { inline_data?: { data: string; mime_type: string } }) => p.inline_data
@@ -111,15 +114,16 @@ export async function POST(req: NextRequest) {
     const {
       imageBase64,
       prompt = "Colorize this black and white sketch with vibrant, realistic colors. Keep the original lines and composition intact. Return only the colorized image.",
+      mimeType,
     } = body as ColorizePayload;
 
     const parts: unknown[] = [
       { text: prompt },
-      { inline_data: { mime_type: "image/jpeg", data: imageBase64 } },
+      { inline_data: { mime_type: mimeType ?? "image/jpeg", data: imageBase64 } },
     ];
 
     try {
-      const data = await callGemini(apiKey, parts);
+      const data = await callGemini(IMAGE_MODEL, apiKey, parts, ["IMAGE", "TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
       const imgPart = responseParts.find(
         (p: { inline_data?: { data: string; mime_type: string } }) => p.inline_data
@@ -145,7 +149,7 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const data = await callGemini(apiKey, parts);
+      const data = await callGemini(ANALYSIS_MODEL, apiKey, parts, ["TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
       const text = responseParts.find((p: { text?: string }) => p.text)?.text ?? "";
       return NextResponse.json({ text });

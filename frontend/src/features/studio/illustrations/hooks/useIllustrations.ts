@@ -1,8 +1,8 @@
 "use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { IllustrationsStage, ColorizedItem, PromptItem, VideoItem } from "../types";
-import { nanoid, fileToBase64, base64ToDataUrl } from "../../_shared/utils";
+import { nanoid, fileToBase64, base64ToDataUrl, pLimit } from "../../_shared/utils";
 import { colorizeSketch, analyzeWithVision } from "../../_shared/services/gemini";
 import { waitForWavespeedPrediction } from "../../_shared/services/wavespeed";
 
@@ -62,6 +62,21 @@ const INITIAL: Pick<
   videos: [],
 };
 
+const safeStorage = createJSONStorage(() => ({
+  getItem: (name: string) => localStorage.getItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "QuotaExceededError") {
+        console.warn("[Studio] localStorage quota exceeded — state not persisted");
+        window.dispatchEvent(new CustomEvent("studio:storage-full"));
+      }
+    }
+  },
+  removeItem: (name: string) => localStorage.removeItem(name),
+}));
+
 export const useIllustrations = create<IllustrationsStore>()(
   persist(
     (set, get) => ({
@@ -73,7 +88,7 @@ export const useIllustrations = create<IllustrationsStore>()(
             id: nanoid(),
             originalBase64: await fileToBase64(file),
             colorizedBase64: null,
-            mimeType: "image/jpeg",
+            mimeType: file.type || "image/jpeg",
             status: "idle" as const,
             approved: true,
           }))
@@ -93,7 +108,7 @@ export const useIllustrations = create<IllustrationsStore>()(
 
         try {
           const prompt = buildColorizePrompt(instruction);
-          const { base64, mimeType } = await colorizeSketch(item.originalBase64, prompt);
+          const { base64, mimeType } = await colorizeSketch(item.originalBase64, prompt, item.mimeType);
           set((s) => ({
             colorized: s.colorized.map((c) =>
               c.id === id
@@ -114,9 +129,7 @@ export const useIllustrations = create<IllustrationsStore>()(
 
       colorizeAll: async (instruction) => {
         const { colorized, colorizeItem } = get();
-        await Promise.all(
-          colorized.filter((c) => c.status !== "done").map((c) => colorizeItem(c.id, instruction))
-        );
+        await pLimit(3, colorized.filter((c) => c.status !== "done").map((c) => () => colorizeItem(c.id, instruction)));
       },
 
       toggleApproved: (id) =>
@@ -240,9 +253,7 @@ Respond with ONLY the prompt text, no explanation.`,
 
       generateAllVideos: async () => {
         const { videos, generateVideo } = get();
-        await Promise.all(
-          videos.filter((v) => v.status !== "done").map((v) => generateVideo(v.id))
-        );
+        await pLimit(3, videos.filter((v) => v.status !== "done").map((v) => () => generateVideo(v.id)));
       },
 
       goBack: () => {
@@ -255,6 +266,7 @@ Respond with ONLY the prompt text, no explanation.`,
     }),
     {
       name: "studio-illustrations",
+      storage: safeStorage,
       partialize: (s) => ({
         stage: s.stage,
         colorized: s.colorized,

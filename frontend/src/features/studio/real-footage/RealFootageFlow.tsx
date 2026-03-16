@@ -6,6 +6,7 @@ import { Stage2Actions } from "./stages/Stage2Actions";
 import { Stage3Keyframes } from "./stages/Stage3Keyframes";
 import { Stage4Videos } from "./stages/Stage4Videos";
 import { RotateCcw } from "lucide-react";
+import { StorageWarning } from "../_shared/StorageWarning";
 
 const STEPS = [
   { label: "Upload & Analyze" },
@@ -27,6 +28,7 @@ export function RealFootageFlow() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
+      <StorageWarning />
       {/* Header */}
       <div className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur border-b border-neutral-800 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4 flex-wrap">

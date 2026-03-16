@@ -104,3 +104,20 @@ export function sleep(ms: number): Promise<void> {
 export function nanoid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
+
+/** Run tasks with at most `concurrency` running simultaneously. */
+export async function pLimit<T>(
+  concurrency: number,
+  tasks: (() => Promise<T>)[]
+): Promise<T[]> {
+  const results: T[] = [];
+  let i = 0;
+  async function worker(): Promise<void> {
+    while (i < tasks.length) {
+      const idx = i++;
+      results[idx] = await tasks[idx]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+  return results;
+}

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useCallback, useEffect } from "react";
-import { Film, Sparkles, ChevronRight, PlusCircle, X, CheckCircle2, Loader2 } from "lucide-react";
+import { Film, Sparkles, ChevronRight, AlertTriangle, X, CheckCircle2, Loader2 } from "lucide-react";
 import { useRealFootage } from "../hooks/useRealFootage";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
 import { uploadToGemini, type GeminiFileRef } from "../../_shared/services/gemini";
@@ -36,9 +36,22 @@ export function Stage1Creative() {
 
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [expiredWarning, setExpiredWarning] = useState(false);
   // Defer file input rendering until after React hydration so event handlers are ready
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+
+  // Check if persisted Gemini file refs have expired (48h limit)
+  useEffect(() => {
+    const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
+    const hasExpired = videoSources.some(
+      (s) => s.uploadedAt && Date.now() - s.uploadedAt > FORTY_EIGHT_HOURS
+    );
+    if (hasExpired) {
+      useRealFootage.getState().reset();
+      setExpiredWarning(true);
+    }
+  }, []);
 
   const updateSlot = (id: string, patch: Partial<UploadSlot>) =>
     setSlots((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -101,6 +114,12 @@ export function Stage1Creative() {
 
   return (
     <div className="space-y-6">
+      {expiredWarning && (
+        <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-950/90 border border-amber-700 text-sm text-amber-300">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>Los videos subidos expiraron (Gemini los almacena 48hs). Subí los clips nuevamente.</span>
+        </div>
+      )}
       <div>
         <h2 className="text-lg font-semibold text-white flex items-center gap-2">
           <Film size={18} className="text-indigo-400" />

@@ -9,7 +9,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 60; // seconds — Vercel Pro required for > 10 s
+export const maxDuration = 300; // seconds — Vercel Pro required for > 10 s
 
 const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -17,18 +17,20 @@ const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 async function pollUntilActive(
   fileName: string,
   apiKey: string,
-  maxWaitMs = 120_000
+  maxWaitMs = 280_000
 ): Promise<void> {
   const deadline = Date.now() + maxWaitMs;
+  let waitMs = 2000;
   while (Date.now() < deadline) {
     const res = await fetch(`${API_BASE}/${fileName}?key=${apiKey}`);
     if (!res.ok) throw new Error(`File status check failed: ${await res.text()}`);
     const data = await res.json();
     if (data.state === "ACTIVE") return;
     if (data.state === "FAILED") throw new Error("Gemini file processing failed");
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, waitMs));
+    waitMs = Math.min(waitMs * 2, 8000);
   }
-  throw new Error("Gemini file processing timed out after 2 minutes");
+  throw new Error("Gemini file processing timed out");
 }
 
 export async function POST(req: NextRequest) {

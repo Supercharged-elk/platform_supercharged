@@ -5,6 +5,7 @@ import { Stage1Colorize } from "./stages/Stage1Colorize";
 import { Stage2Prompts } from "./stages/Stage2Prompts";
 import { Stage3Videos } from "./stages/Stage3Videos";
 import { RotateCcw } from "lucide-react";
+import { StorageWarning } from "../_shared/StorageWarning";
 
 const STEPS = [
   { label: "Colorize Sketches" },
@@ -24,6 +25,7 @@ export function IllustrationsFlow() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
+      <StorageWarning />
       {/* Header */}
       <div className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur border-b border-neutral-800 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4 flex-wrap">

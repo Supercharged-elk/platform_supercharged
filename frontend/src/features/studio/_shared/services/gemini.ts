@@ -96,12 +96,13 @@ export async function generateImage(prompt: string): Promise<{ base64: string; m
 /** Colorize a B&W sketch using Gemini 2.0 Flash image gen. Returns base64 + mimeType. */
 export async function colorizeSketch(
   imageBase64: string,
-  prompt?: string
+  prompt?: string,
+  mimeType?: string
 ): Promise<{ base64: string; mimeType: string }> {
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "colorize", imageBase64, prompt }),
+    body: JSON.stringify({ mode: "colorize", imageBase64, prompt, mimeType }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

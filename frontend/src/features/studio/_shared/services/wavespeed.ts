@@ -7,6 +7,17 @@ interface WavespeedPrediction {
   status: "queued" | "processing" | "completed" | "failed";
   outputs?: string[];
   error?: string;
+  data?: {
+    id: string;
+    status: "queued" | "processing" | "completed" | "failed";
+    outputs?: string[];
+    error?: string;
+  };
+}
+
+function normalize(p: WavespeedPrediction): { status: string; outputs?: string[]; error?: string } {
+  if (p.data) return p.data;
+  return p;
 }
 
 /** Start a WaveSpeed prediction. */
@@ -39,7 +50,8 @@ export async function pollWavespeedPrediction(
       throw new Error(err.error ?? "Failed to poll WaveSpeed prediction");
     }
     const prediction: WavespeedPrediction = await res.json();
-    if (prediction.status === "completed" || prediction.status === "failed") {
+    const norm = normalize(prediction);
+    if (norm.status === "completed" || norm.status === "failed") {
       return prediction;
     }
     await sleep(intervalMs);
@@ -56,18 +68,20 @@ export async function waitForWavespeedPrediction(
   const started = await startWavespeedPrediction(model, input);
 
   // Already done on first response (unlikely but possible)
-  if (started.status === "completed") return extractOutput(started);
-  if (started.status === "failed") throw new Error(started.error ?? "WaveSpeed prediction failed");
+  const startedNorm = normalize(started);
+  if (startedNorm.status === "completed") return extractOutput(started);
+  if (startedNorm.status === "failed") throw new Error(startedNorm.error ?? "WaveSpeed prediction failed");
 
   const completed = await pollWavespeedPrediction(started.id, intervalMs);
-  if (completed.status !== "completed") {
-    throw new Error(completed.error ?? `WaveSpeed prediction ${completed.status}`);
+  const completedNorm = normalize(completed);
+  if (completedNorm.status !== "completed") {
+    throw new Error(completedNorm.error ?? `WaveSpeed prediction ${completedNorm.status}`);
   }
   return extractOutput(completed);
 }
 
 function extractOutput(p: WavespeedPrediction): string {
-  const out = p.outputs?.[0];
+  const out = p.outputs?.[0] ?? p.data?.outputs?.[0];
   if (!out) throw new Error("WaveSpeed returned no output");
   return out;
 }

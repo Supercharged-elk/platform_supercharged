@@ -6,6 +6,7 @@ export interface VideoSource {
   mimeType: string;
   name: string;       // e.g. "files/abc123"
   displayName: string; // original filename
+  uploadedAt?: number; // Unix ms timestamp when file was uploaded
 }
 
 export interface DetectedAction {
