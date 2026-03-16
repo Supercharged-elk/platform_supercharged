@@ -101,38 +101,77 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Trigger a browser download for a base64-encoded file.
- * Uses Blob + createObjectURL — reliable for large files (1-2 MB+).
- * data: URLs fail silently in Chrome/Safari above ~1 MB.
+ * Download a base64-encoded file via the server-side /api/studio/download endpoint.
+ * Client-side approaches (data: URLs, atob+Uint8Array+Blob) fail silently
+ * for large files in Next.js. The server uses Node.js Buffer which is reliable
+ * for any size and bypasses all CSP / browser restrictions.
  */
-export function downloadBase64(base64: string, mimeType: string, filename: string): void {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  const blob = new Blob([bytes], { type: mimeType });
+export async function downloadBase64(
+  base64: string,
+  mimeType: string,
+  filename: string
+): Promise<void> {
+  const res = await fetch("/api/studio/download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ base64, mimeType, filename }),
+  });
+
+  if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
+
+  const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.style.display = "none";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  // Revoke after a short delay so the browser has time to start the download
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
 /**
- * Trigger staggered downloads for multiple base64 files.
- * Uses setTimeout (not await) so the browser's user-gesture context is
- * preserved for each individual download.
+ * Download multiple base64 files.
+ * Pre-fetches all blobs in parallel, then staggers the <a> clicks
+ * so browsers don't block them as popups.
  */
-export function downloadAllBase64(
+export async function downloadAllBase64(
   items: { base64: string; mimeType: string; filename: string }[]
-): void {
-  items.forEach((item, i) => {
-    setTimeout(() => downloadBase64(item.base64, item.mimeType, item.filename), i * 600);
+): Promise<void> {
+  // Fetch all blobs in parallel
+  const blobs = await Promise.all(
+    items.map(async (item) => {
+      const res = await fetch("/api/studio/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item),
+      });
+      if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
+      return { blob: await res.blob(), filename: item.filename };
+    })
+  );
+
+  // Create all object URLs up front
+  const entries = blobs.map(({ blob, filename }) => ({
+    url: URL.createObjectURL(blob),
+    filename,
+  }));
+
+  // Stagger the click triggers
+  entries.forEach(({ url, filename }, i) => {
+    setTimeout(() => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (i === entries.length - 1) {
+        setTimeout(() => entries.forEach((e) => URL.revokeObjectURL(e.url)), 5000);
+      }
+    }, i * 600);
   });
 }
 
