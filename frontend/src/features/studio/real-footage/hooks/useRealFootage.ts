@@ -289,7 +289,7 @@ Respond with ONLY a JSON object in the format { "items": ["...", "..."] }, one s
         try {
           const startImage = base64ToDataUrl(item.base64, "image/jpeg");
           const videoUrl = await waitForPrediction(KLING_MODEL, {
-            mode: "standard",
+            mode: "pro",
             start_image: startImage,
             prompt: effectivePrompt,
             duration: 5,
