@@ -134,6 +134,30 @@ export async function downloadBase64(
 }
 
 /**
+ * Download a file from an external URL via the server-side proxy.
+ * Required for cross-origin URLs (e.g. Replicate CDN) where <a download>
+ * is ignored by the browser and causes navigation instead.
+ */
+export async function downloadFromUrl(url: string, filename: string): Promise<void> {
+  const res = await fetch("/api/studio/download-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, filename }),
+  });
+  if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 3000);
+}
+
+/**
  * Bundle multiple files into a ZIP and trigger a single download.
  * Accepts base64 strings (images) or remote URLs (videos).
  */

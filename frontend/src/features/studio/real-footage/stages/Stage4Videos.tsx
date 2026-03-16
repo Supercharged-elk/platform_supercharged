@@ -4,7 +4,7 @@ import { Download, RefreshCw, Video, Play, ArrowLeft } from "lucide-react";
 import { useRealFootage } from "../hooks/useRealFootage";
 import { GeneratingState } from "../../_shared/GeneratingState";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
-import { base64ToDataUrl, downloadAsZip } from "../../_shared/utils";
+import { base64ToDataUrl, downloadAsZip, downloadFromUrl } from "../../_shared/utils";
 
 export function Stage4Videos() {
   const { videos, generateVideo, generateAllVideos, goBack } = useRealFootage();
@@ -104,14 +104,16 @@ export function Stage4Videos() {
               {/* Action buttons overlay */}
               {vid.status === "done" && vid.videoUrl && (
                 <div className="absolute top-2 right-2 flex gap-1">
-                  <a
-                    href={vid.videoUrl}
-                    download
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadFromUrl(vid.videoUrl!, `video-${vid.id}.mp4`).catch(console.error)
+                    }
                     className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white transition"
                     title="Download video"
                   >
                     <Download size={13} />
-                  </a>
+                  </button>
                   <button
                     type="button"
                     onClick={() => void generateVideo(vid.id, localPrompts[vid.id])}
