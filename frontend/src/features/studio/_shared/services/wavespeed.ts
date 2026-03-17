@@ -72,7 +72,11 @@ export async function waitForWavespeedPrediction(
   if (startedNorm.status === "completed") return extractOutput(started);
   if (startedNorm.status === "failed") throw new Error(startedNorm.error ?? "WaveSpeed prediction failed");
 
-  const completed = await pollWavespeedPrediction(started.id, intervalMs);
+  // API wraps prediction inside `data` — use data.id, fall back to top-level id
+  const predictionId = started.data?.id ?? started.id;
+  if (!predictionId) throw new Error("WaveSpeed returned no prediction id");
+
+  const completed = await pollWavespeedPrediction(predictionId, intervalMs);
   const completedNorm = normalize(completed);
   if (completedNorm.status !== "completed") {
     throw new Error(completedNorm.error ?? `WaveSpeed prediction ${completedNorm.status}`);

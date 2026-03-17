@@ -15,7 +15,7 @@ export async function GET(
     return NextResponse.json({ error: "WAVESPEED_API_KEY not configured" }, { status: 500 });
   }
 
-  const res = await fetch(`${WAVESPEED_BASE}/predictions/${params.id}/`, {
+  const res = await fetch(`${WAVESPEED_BASE}/predictions/${params.id}/result`, {
     headers: { Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
   });
