@@ -345,17 +345,15 @@ export const useIllustrations = create<IllustrationsStore>()(
           const input: Record<string, unknown> = {
             image: startImage,
             prompt: effectivePrompt,
-            high_noise_lora: HIGH_NOISE_LORA,
-            high_noise_lora_scale: HIGH_NOISE_SCALE,
-            low_noise_lora: LOW_NOISE_LORA,
-            low_noise_lora_scale: LOW_NOISE_SCALE,
-            num_frames: 81,
-            fps: 16,
+            duration: 5,
+            resolution: "720p",
+            high_noise_loras: [{ url: HIGH_NOISE_LORA, scale: HIGH_NOISE_SCALE }],
+            low_noise_loras: [{ url: LOW_NOISE_LORA, scale: LOW_NOISE_SCALE }],
+            loras: [],
+            last_image: item.endImageBase64
+              ? base64ToDataUrl(item.endImageBase64, item.endImageMimeType)
+              : "",
           };
-
-          if (item.endImageBase64) {
-            input.end_image = base64ToDataUrl(item.endImageBase64, item.endImageMimeType);
-          }
 
           const videoUrl = await waitForWavespeedPrediction(WAN_MODEL, input);
           set((s) => ({
