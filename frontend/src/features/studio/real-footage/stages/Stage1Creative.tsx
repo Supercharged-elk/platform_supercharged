@@ -1,9 +1,14 @@
 "use client";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { Film, Sparkles, ChevronRight, AlertTriangle, X, CheckCircle2, Loader2 } from "lucide-react";
 import { useRealFootage } from "../hooks/useRealFootage";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
-import { uploadToGemini, type GeminiFileRef } from "../../_shared/services/gemini";
+import {
+  uploadToGemini,
+  type GeminiFileRef,
+  type GeminiUploadErrorCode,
+  validateGeminiUploadFile,
+} from "../../_shared/services/gemini";
 
 interface UploadSlot {
   id: string;
@@ -12,6 +17,7 @@ interface UploadSlot {
   status: "uploading" | "processing" | "ready" | "error";
   progress: number; // 0-100
   error?: string;
+  errorCode?: GeminiUploadErrorCode;
   ref?: GeminiFileRef;
 }
 
@@ -72,14 +78,35 @@ export function Stage1Creative() {
         );
         updateSlot(id, { status: "ready", progress: 100, ref });
       } catch (e) {
-        updateSlot(id, { status: "error", error: (e as Error).message });
+        const err = e as Error & { code?: GeminiUploadErrorCode };
+        updateSlot(id, { status: "error", error: err.message, errorCode: err.code });
       }
     },
     []
   );
 
   const addFiles = (files: File[]) => {
-    files.forEach((f) => void uploadFile(f));
+    files.forEach((f) => {
+      const preflight = validateGeminiUploadFile(f);
+      if (!preflight.ok) {
+        const id = slotId();
+        const objectUrl = URL.createObjectURL(f);
+        setSlots((prev) => [
+          ...prev,
+          {
+            id,
+            file: f,
+            objectUrl,
+            status: "error",
+            progress: 0,
+            error: preflight.error.message,
+            errorCode: preflight.error.code,
+          },
+        ]);
+        return;
+      }
+      void uploadFile(f);
+    });
   };
 
   const removeSlot = (id: string) => {
@@ -99,6 +126,15 @@ export function Stage1Creative() {
     void uploadFile(slot.file);
   };
 
+  const removeFailedSlots = () => {
+    setSlots((prev) => {
+      prev
+        .filter((s) => s.status === "error" && s.objectUrl)
+        .forEach((s) => URL.revokeObjectURL(s.objectUrl));
+      return prev.filter((s) => s.status !== "error");
+    });
+  };
+
   const handleAnalyze = async () => {
     const ready = slots.filter((s) => s.status === "ready" && s.ref);
     if (!ready.length) return;
@@ -115,9 +151,25 @@ export function Stage1Creative() {
   };
 
   const readyCount = slots.filter((s) => s.status === "ready").length;
-  const allReady = slots.length > 0 && slots.every((s) => s.status === "ready" || s.status === "error");
   const hasErrors = slots.some((s) => s.status === "error");
   const uploading = slots.some((s) => s.status === "uploading" || s.status === "processing");
+  const errorSummary = useMemo(() => {
+    const failed = slots.filter((s) => s.status === "error");
+    if (!failed.length) return null;
+
+    const counts = new Map<string, number>();
+    failed.forEach((s) => {
+      const key = s.errorCode ?? s.error ?? "UPLOAD_FAILED";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    const [topReason] = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0] ?? [];
+    if (!topReason) return null;
+    if (topReason === "FILE_TOO_LARGE") return "most clips exceed the allowed size";
+    if (topReason === "UNSUPPORTED_MIME") return "the selected format is not supported";
+    if (topReason === "MISSING_API_KEY") return "upload service is not configured";
+    if (topReason === "UPLOAD_TIMEOUT") return "Gemini processing timed out";
+    return "the upload service returned an error";
+  }, [slots]);
 
   return (
     <div className="space-y-6">
@@ -259,7 +311,18 @@ export function Stage1Creative() {
             <p className="text-xs text-yellow-500">Some uploads failed — only ready clips will be analyzed.</p>
           )}
           {hasErrors && readyCount === 0 && !uploading && (
-            <p className="text-xs text-red-400">All uploads failed — remove the clips and try again.</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-red-400">
+                All uploads failed{errorSummary ? ` — ${errorSummary}` : ""}. Remove the clips and try again.
+              </p>
+              <button
+                type="button"
+                onClick={removeFailedSlots}
+                className="text-[10px] text-neutral-400 hover:text-white underline shrink-0 transition"
+              >
+                Remove failed clips
+              </button>
+            </div>
           )}
           <button
             type="button"

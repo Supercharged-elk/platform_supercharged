@@ -590,4 +590,60 @@ test.describe('Studio — Real Footage pipeline', () => {
     expect(geminiCalls.length).toBeGreaterThan(0);
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // RF-15: Stage 1 — local preflight blocks unsupported MIME without API call
+  // ────────────────────────────────────────────────────────────────────────────
+  test('RF-15: Unsupported MIME is rejected locally and does not call upload endpoint', async ({ page }) => {
+    await clearRFState(page);
+
+    const uploadCalls = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/api/studio/gemini-upload')) uploadCalls.push(r.method());
+    });
+
+    await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
+    const fileInput = page.locator('input[type="file"][accept="video/*"]');
+
+    await fileInput.setInputFiles({
+      name: 'invalid.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('not a video'),
+    });
+
+    await expect(page.getByText('invalid.txt')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Unsupported video format/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/All uploads failed.*selected format is not supported/i)).toBeVisible({ timeout: 5000 });
+    expect(uploadCalls.length).toBe(0);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // RF-16: Stage 1 — endpoint error contract is surfaced in slot + aggregate
+  // ────────────────────────────────────────────────────────────────────────────
+  test('RF-16: FILE_TOO_LARGE endpoint error is shown with actionable aggregate summary', async ({ page }) => {
+    await clearRFState(page);
+    page.route('**/api/studio/gemini-upload', async (route) => {
+      await route.fulfill({
+        status: 413,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'FILE_TOO_LARGE',
+          message: 'File too large. Max allowed is 50 MB.',
+          retryable: false,
+        }),
+      });
+    });
+
+    await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
+    const fileInput = page.locator('input[type="file"][accept="video/*"]');
+    await fileInput.setInputFiles({
+      name: 'huge.mp4',
+      mimeType: 'video/mp4',
+      buffer: Buffer.from('tiny content but mocked error'),
+    });
+
+    await expect(page.getByText('huge.mp4')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/File too large\. Max allowed is 50 MB\./i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/All uploads failed.*most clips exceed the allowed size/i)).toBeVisible({ timeout: 5000 });
+  });
+
 });

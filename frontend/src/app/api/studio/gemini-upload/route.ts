@@ -10,9 +10,86 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 300; // seconds — Vercel Pro required for > 10 s
+export const runtime = "nodejs";
 
 const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+// Keep this aligned with client preflight default; tune down via RF_MAX_UPLOAD_MB for constrained deployments.
+const DEFAULT_MAX_UPLOAD_MB = 512;
+const DEFAULT_RESUMABLE_THRESHOLD_MB = 8;
+
+type UploadErrorCode =
+  | "MISSING_API_KEY"
+  | "FILE_TOO_LARGE"
+  | "UNSUPPORTED_MIME"
+  | "UPLOAD_TIMEOUT"
+  | "UPSTREAM_ERROR"
+  | "INVALID_FORM";
+
+class UploadRouteError extends Error {
+  code: UploadErrorCode;
+  status: number;
+  retryable: boolean;
+  details?: string;
+
+  constructor(
+    code: UploadErrorCode,
+    message: string,
+    status: number,
+    retryable = false,
+    details?: string
+  ) {
+    super(message);
+    this.code = code;
+    this.status = status;
+    this.retryable = retryable;
+    this.details = details;
+  }
+}
+
+const SUPPORTED_MEDIA_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-matroska",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+function getUploadMaxBytes() {
+  const fromEnv = Number(process.env.RF_MAX_UPLOAD_MB);
+  const maxMb = Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_MAX_UPLOAD_MB;
+  return Math.floor(maxMb * 1024 * 1024);
+}
+
+function getResumableThresholdBytes() {
+  const fromEnv = Number(process.env.RF_RESUMABLE_THRESHOLD_MB);
+  const thresholdMb = Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_RESUMABLE_THRESHOLD_MB;
+  return Math.floor(thresholdMb * 1024 * 1024);
+}
+
+function jsonUploadError(err: UploadRouteError) {
+  return NextResponse.json(
+    {
+      code: err.code,
+      message: err.message,
+      retryable: err.retryable,
+      details: err.details,
+      error: err.message,
+    },
+    { status: err.status }
+  );
+}
+
+function parseUpstreamError(raw: string) {
+  try {
+    const data = JSON.parse(raw) as { error?: { message?: string; status?: string; code?: number } };
+    return data.error?.message ?? raw;
+  } catch {
+    return raw;
+  }
+}
 
 async function pollUntilActive(
   fileName: string,
@@ -23,46 +100,46 @@ async function pollUntilActive(
   let waitMs = 2000;
   while (Date.now() < deadline) {
     const res = await fetch(`${API_BASE}/${fileName}?key=${apiKey}`);
-    if (!res.ok) throw new Error(`File status check failed: ${await res.text()}`);
+    if (!res.ok) {
+      const raw = await res.text();
+      throw new UploadRouteError(
+        "UPSTREAM_ERROR",
+        `File status check failed: ${parseUpstreamError(raw)}`,
+        502,
+        true,
+        `status=${res.status}`
+      );
+    }
     const data = await res.json();
     if (data.state === "ACTIVE") return;
-    if (data.state === "FAILED") throw new Error("Gemini file processing failed");
+    if (data.state === "FAILED") {
+      throw new UploadRouteError(
+        "UPSTREAM_ERROR",
+        "Gemini file processing failed",
+        502,
+        true
+      );
+    }
     await new Promise((r) => setTimeout(r, waitMs));
     waitMs = Math.min(waitMs * 2, 8000);
   }
-  throw new Error("Gemini file processing timed out");
+  throw new UploadRouteError("UPLOAD_TIMEOUT", "Gemini file processing timed out", 504, true);
 }
 
-export async function POST(req: NextRequest) {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "GOOGLE_AI_API_KEY not configured" }, { status: 500 });
-  }
-
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Invalid multipart form data" }, { status: 400 });
-  }
-
-  const file = formData.get("file") as File | null;
-  if (!file) {
-    return NextResponse.json({ error: "No file field in form data" }, { status: 400 });
-  }
-
-  const mimeType = file.type || "video/mp4";
-  const displayName = file.name || "upload";
-  const fileBuffer = await file.arrayBuffer();
-
-  // Build a multipart/related body for Gemini's upload endpoint
+async function uploadMultipart(params: {
+  apiKey: string;
+  mimeType: string;
+  displayName: string;
+  fileBuffer: ArrayBuffer;
+}) {
+  const { apiKey, mimeType, displayName, fileBuffer } = params;
   const boundary = `_gemini_${Date.now()}_`;
   const metaJson = JSON.stringify({ file: { display_name: displayName } });
 
   const enc = new TextEncoder();
   const head = enc.encode(
     `--${boundary}\r\n` +
-      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+      "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
       `${metaJson}\r\n` +
       `--${boundary}\r\n` +
       `Content-Type: ${mimeType}\r\n\r\n`
@@ -74,38 +151,198 @@ export async function POST(req: NextRequest) {
   body.set(new Uint8Array(fileBuffer), head.byteLength);
   body.set(tail, head.byteLength + fileBuffer.byteLength);
 
-  const uploadRes = await fetch(
-    `${UPLOAD_BASE}/files?uploadType=multipart&key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": `multipart/related; boundary=${boundary}`,
-        "Content-Length": body.byteLength.toString(),
-      },
-      body,
-    }
-  );
+  const uploadRes = await fetch(`${UPLOAD_BASE}/files?uploadType=multipart&key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
 
   if (!uploadRes.ok) {
-    const err = await uploadRes.text();
-    return NextResponse.json({ error: `Gemini upload error: ${err}` }, { status: uploadRes.status });
+    const raw = await uploadRes.text();
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      `Gemini upload error: ${parseUpstreamError(raw)}`,
+      uploadRes.status >= 400 && uploadRes.status < 500 ? 400 : 502,
+      uploadRes.status >= 500,
+      `status=${uploadRes.status}`
+    );
   }
 
-  const { file: geminiFile } = await uploadRes.json();
+  return uploadRes.json();
+}
 
-  // If state is already ACTIVE (small files), skip polling
-  if (geminiFile.state !== "ACTIVE") {
-    try {
-      await pollUntilActive(geminiFile.name, apiKey);
-    } catch (e) {
-      return NextResponse.json({ error: (e as Error).message }, { status: 500 });
-    }
-  }
+async function uploadResumable(params: {
+  apiKey: string;
+  mimeType: string;
+  displayName: string;
+  fileBuffer: ArrayBuffer;
+}) {
+  const { apiKey, mimeType, displayName, fileBuffer } = params;
 
-  return NextResponse.json({
-    fileUri: geminiFile.uri,
-    mimeType: geminiFile.mimeType || mimeType,
-    name: geminiFile.name,
-    displayName: geminiFile.displayName || displayName,
+  const startRes = await fetch(`${UPLOAD_BASE}/files?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Type": mimeType,
+      "X-Goog-Upload-Header-Content-Length": String(fileBuffer.byteLength),
+    },
+    body: JSON.stringify({ file: { display_name: displayName } }),
   });
+
+  if (!startRes.ok) {
+    const raw = await startRes.text();
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      `Gemini resumable start failed: ${parseUpstreamError(raw)}`,
+      startRes.status >= 400 && startRes.status < 500 ? 400 : 502,
+      startRes.status >= 500,
+      `status=${startRes.status}`
+    );
+  }
+
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) {
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      "Gemini resumable upload URL missing",
+      502,
+      true
+    );
+  }
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": mimeType,
+      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Offset": "0",
+    },
+    body: fileBuffer,
+  });
+
+  if (!uploadRes.ok) {
+    const raw = await uploadRes.text();
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      `Gemini resumable upload failed: ${parseUpstreamError(raw)}`,
+      uploadRes.status >= 400 && uploadRes.status < 500 ? 400 : 502,
+      uploadRes.status >= 500,
+      `status=${uploadRes.status}`
+    );
+  }
+
+  return uploadRes.json();
+}
+
+export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
+  let uploadMode: "multipart" | "resumable" = "multipart";
+  let mimeType = "video/mp4";
+  let fileSize = 0;
+
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  if (!apiKey) {
+    return jsonUploadError(
+      new UploadRouteError("MISSING_API_KEY", "GOOGLE_AI_API_KEY not configured", 500)
+    );
+  }
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return jsonUploadError(
+      new UploadRouteError("INVALID_FORM", "Invalid multipart form data", 400)
+    );
+  }
+
+  const file = formData.get("file") as File | null;
+  if (!file) {
+    return jsonUploadError(
+      new UploadRouteError("INVALID_FORM", "No file field in form data", 400)
+    );
+  }
+
+  mimeType = file.type || "video/mp4";
+  const displayName = file.name || "upload";
+  fileSize = file.size;
+
+  if (!SUPPORTED_MEDIA_MIME_TYPES.has(mimeType)) {
+    return jsonUploadError(
+      new UploadRouteError(
+        "UNSUPPORTED_MIME",
+        "Unsupported media format. Use MP4, MOV, WebM, PNG, JPEG, or WebP.",
+        415
+      )
+    );
+  }
+
+  const maxUploadBytes = getUploadMaxBytes();
+  if (fileSize > maxUploadBytes) {
+    const maxMb = Math.round(maxUploadBytes / (1024 * 1024));
+    return jsonUploadError(
+      new UploadRouteError("FILE_TOO_LARGE", `File too large. Max allowed is ${maxMb} MB.`, 413)
+    );
+  }
+
+  try {
+    const fileBuffer = await file.arrayBuffer();
+    const resumableThresholdBytes = getResumableThresholdBytes();
+    const resumableEnabled = process.env.RF_RESUMABLE_UPLOAD !== "0";
+
+    let uploadData: { file?: { state?: string; name: string; uri: string; mimeType?: string; displayName?: string } };
+    if (resumableEnabled && fileSize >= resumableThresholdBytes) {
+      uploadMode = "resumable";
+      uploadData = (await uploadResumable({
+        apiKey,
+        mimeType,
+        displayName,
+        fileBuffer,
+      })) as typeof uploadData;
+    } else {
+      uploadMode = "multipart";
+      uploadData = (await uploadMultipart({
+        apiKey,
+        mimeType,
+        displayName,
+        fileBuffer,
+      })) as typeof uploadData;
+    }
+
+    const geminiFile = uploadData.file;
+    if (!geminiFile?.name || !geminiFile?.uri) {
+      throw new UploadRouteError("UPSTREAM_ERROR", "Gemini upload response missing file metadata", 502, true);
+    }
+
+    // If state is already ACTIVE (small files), skip polling
+    if (geminiFile.state !== "ACTIVE") {
+      await pollUntilActive(geminiFile.name, apiKey);
+    }
+
+    return NextResponse.json({
+      fileUri: geminiFile.uri,
+      mimeType: geminiFile.mimeType || mimeType,
+      name: geminiFile.name,
+      displayName: geminiFile.displayName || displayName,
+    });
+  } catch (err) {
+    if (err instanceof UploadRouteError) return jsonUploadError(err);
+    const message = err instanceof Error ? err.message : "Unknown upload error";
+    return jsonUploadError(new UploadRouteError("UPSTREAM_ERROR", message, 502, true));
+  } finally {
+    const elapsedMs = Date.now() - startedAt;
+    console.info(
+      JSON.stringify({
+        event: "studio_gemini_upload",
+        uploadMode,
+        mimeType,
+        fileSize,
+        elapsedMs,
+      })
+    );
+  }
 }
