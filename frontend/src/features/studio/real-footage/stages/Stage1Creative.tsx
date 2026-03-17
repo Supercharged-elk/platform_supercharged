@@ -92,6 +92,13 @@ export function Stage1Creative() {
     if (creativeAnalysis) useRealFootage.getState().reset();
   };
 
+  const retrySlot = (id: string) => {
+    const slot = slots.find((s) => s.id === id);
+    if (!slot || slot.file.size === 0) return; // rehydrated placeholder — can't retry
+    removeSlot(id);
+    void uploadFile(slot.file);
+  };
+
   const handleAnalyze = async () => {
     const ready = slots.filter((s) => s.status === "ready" && s.ref);
     if (!ready.length) return;
@@ -216,7 +223,18 @@ export function Stage1Creative() {
                 )}
 
                 {slot.status === "error" && (
-                  <p className="text-[10px] text-red-400 truncate">{slot.error}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-red-400 break-all leading-snug flex-1">{slot.error ?? "Upload failed"}</p>
+                    {slot.file.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => retrySlot(slot.id)}
+                        className="text-[10px] text-neutral-400 hover:text-white underline shrink-0 transition"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 

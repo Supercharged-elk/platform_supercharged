@@ -197,6 +197,16 @@ function mockReplicate(page) {
 
 test.describe('Studio — Real Footage pipeline', () => {
 
+  // Bypass the @elkanodata.com auth gate for E2E tests (dev only)
+  test.beforeEach(async ({ page }) => {
+    await page.context().addCookies([{
+      name: 'e2e_auth_bypass',
+      value: '1',
+      domain: 'localhost',
+      path: '/',
+    }]);
+  });
+
   // ────────────────────────────────────────────────────────────────────────────
   // RF-01: Studio landing page
   // ────────────────────────────────────────────────────────────────────────────
@@ -302,8 +312,9 @@ test.describe('Studio — Real Footage pipeline', () => {
 
     // Now on Stage 2
     await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('Person walks through a doorway in silhouette')).toBeVisible();
-    await expect(page.getByText('Camera pans slowly across an empty street at dusk')).toBeVisible();
+    // Use exact: true — the creativeAnalysis paragraph also contains these strings as substrings
+    await expect(page.getByText('Person walks through a doorway in silhouette', { exact: true })).toBeVisible();
+    await expect(page.getByText('Camera pans slowly across an empty street at dusk', { exact: true })).toBeVisible();
   });
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -325,14 +336,15 @@ test.describe('Studio — Real Footage pipeline', () => {
 
     await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
-    // Actions are displayed
-    await expect(page.getByText('Person walks through a doorway in silhouette')).toBeVisible();
+    // Actions are displayed (use exact: true — creativeAnalysis paragraph contains these as substrings)
+    await expect(page.getByText('Person walks through a doorway in silhouette', { exact: true })).toBeVisible();
 
     // Click "Enrich with AI"
     await page.getByRole('button', { name: /Enrich with AI/i }).click();
 
     // Wait for enrichment to complete — action cards with imagePrompt textareas appear
-    await expect(page.getByRole('button', { name: /Generate Keyframes for/i })).toBeVisible({ timeout: 10000 });
+    // .first() because the button appears in both the enriched-actions header and bottom nav
+    await expect(page.getByRole('button', { name: /Generate Keyframes for/i }).first()).toBeVisible({ timeout: 10000 });
 
     // Verify OpenAI was called (not Gemini)
     expect(openAICalls.length).toBeGreaterThan(0);
@@ -372,8 +384,9 @@ test.describe('Studio — Real Footage pipeline', () => {
     await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
-    // Confirm to advance to Stage 3
-    await page.getByRole('button', { name: /Generate Keyframes for/i }).click();
+    // Confirm to advance to Stage 3 — use .first() because the button appears in both
+    // the enriched-actions header and the bottom navigation bar
+    await page.getByRole('button', { name: /Generate Keyframes for/i }).first().click();
 
     await expect(page.getByRole('heading', { name: /Generate Keyframes/i })).toBeVisible({ timeout: 5000 });
 
@@ -391,8 +404,8 @@ test.describe('Studio — Real Footage pipeline', () => {
     await approveBtn.click();
     await expect(approveBtn).toContainText('Approved');
 
-    // "Animate N Keyframes" button appears
-    await expect(page.getByRole('button', { name: /Animate.*Keyframe/i })).toBeVisible({ timeout: 5000 });
+    // "Animate N Keyframes" button appears (use .first() — appears in both header and bottom nav)
+    await expect(page.getByRole('button', { name: /Animate.*Keyframe/i }).first()).toBeVisible({ timeout: 5000 });
 
     await page.screenshot({ path: 'test-results/RF-07-keyframes.png' });
   });
@@ -507,10 +520,9 @@ test.describe('Studio — Real Footage pipeline', () => {
     await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
-    // First action starts approved (border should be indigo)
-    const firstAction = page.locator('[class*="rounded-xl"]').filter({ hasText: 'Person walks through' }).first();
-    // The approve checkbox button
-    const checkBtn = firstAction.locator('button').first();
+    // Target the Unapprove button directly — the [class*="rounded-xl"] filter also matched
+    // the creativeAnalysis card (which contains the action text as substring but has no buttons)
+    const checkBtn = page.getByRole('button', { name: 'Unapprove' }).first();
 
     // It's currently checked (approved) — click to unapprove
     await checkBtn.click();
@@ -518,7 +530,8 @@ test.describe('Studio — Real Footage pipeline', () => {
     // The "Generate Keyframes for N" count should decrease
     // (0 approved now → button should disappear or count changes)
     // Actually both start approved (2), after unchecking one it should show "1"
-    const confirmBtn = page.getByRole('button', { name: /Generate Keyframes for 1 Action/i });
+    // .first() because this button appears in both the enriched-actions header and bottom nav
+    const confirmBtn = page.getByRole('button', { name: /Generate Keyframes for 1 Action/i }).first();
     await expect(confirmBtn).toBeVisible({ timeout: 3000 });
   });
 

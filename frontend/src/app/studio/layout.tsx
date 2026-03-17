@@ -23,7 +23,12 @@ export default async function StudioLayout({ children }: { children: React.React
   );
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!isAllowedEmail(user)) {
+  // Allow E2E tests to bypass auth in development (cookie set by Playwright)
+  const isE2EBypass =
+    process.env.NODE_ENV !== "production" &&
+    cookieStore.get("e2e_auth_bypass")?.value === "1";
+
+  if (!isE2EBypass && !isAllowedEmail(user)) {
     redirect("/login");
   }
 
