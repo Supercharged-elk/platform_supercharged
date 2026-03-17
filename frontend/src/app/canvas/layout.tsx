@@ -1,11 +1,46 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import Link from "next/link";
+import { Lock, ArrowLeft } from "lucide-react";
 
-function isAllowedEmail(user: { email?: string; user_metadata?: { email?: string } } | null): boolean {
+function getDevEmails(): string[] {
+  return (process.env.CANVAS_DEV_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isDevEmail(user: { email?: string; user_metadata?: { email?: string } } | null): boolean {
   if (!user) return false;
-  const email = user.email ?? (user.user_metadata?.email as string | undefined) ?? "";
-  return email.endsWith("@elkanodata.com");
+  const email = (user.email ?? (user.user_metadata?.email as string | undefined) ?? "").toLowerCase();
+  return getDevEmails().includes(email);
+}
+
+function CanvasComingSoon() {
+  return (
+    <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center px-6">
+      <div className="max-w-md w-full text-center space-y-6">
+        <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 mx-auto">
+          <Lock size={28} className="text-neutral-500" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-white">Canvas</h1>
+          <p className="text-neutral-500 mt-2 text-sm leading-relaxed">
+            The visual pipeline builder is currently in development and not available in this beta.
+            <br className="hidden sm:block" />
+            Stay tuned — it's coming soon.
+          </p>
+        </div>
+        <Link
+          href="/studio"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium transition"
+        >
+          <ArrowLeft size={14} />
+          Back to Studio
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 export default async function CanvasLayout({ children }: { children: React.ReactNode }) {
@@ -17,8 +52,8 @@ export default async function CanvasLayout({ children }: { children: React.React
   );
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!isAllowedEmail(user)) {
-    redirect("/login");
+  if (!isDevEmail(user)) {
+    return <CanvasComingSoon />;
   }
 
   return <>{children}</>;
