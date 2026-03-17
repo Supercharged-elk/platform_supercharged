@@ -289,8 +289,8 @@ export function Stage1Creative() {
         </div>
       )}
 
-      {/* Navigation — always available once clips are uploaded (analysis is optional) */}
-      {(readyCount > 0 || !!creativeAnalysis) && !analyzing && !uploading && (
+      {/* Navigation — visible as soon as the user has added any file */}
+      {(slots.length > 0 || !!creativeAnalysis) && !analyzing && (
         <div className="flex items-center gap-3 flex-wrap">
           {creativeAnalysis && (
             <button
@@ -308,7 +308,8 @@ export function Stage1Creative() {
           <button
             type="button"
             onClick={confirmAnalysis}
-            className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition"
+            disabled={uploading}
+            className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition disabled:opacity-50"
           >
             {creativeAnalysis ? "Confirm & Review Actions" : "Continue to Stage 2"}
             <ChevronRight size={15} />
