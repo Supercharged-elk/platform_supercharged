@@ -8,6 +8,10 @@ import { waitForWavespeedPrediction } from "../../_shared/services/wavespeed";
 
 const WAN_MODEL = "wavespeed-ai/wan-2.2/image-to-video-lora";
 
+const HIGH_NOISE_LORA = "https://d2p7pge43lyniu.cloudfront.net/output/589c67a8-8007-439d-9a74-6050aa947dac-u1_i2v_A14B_separate_high_noise_lora_b99f07d8-e78d-4b2f-b077-ddcb52c2cb07.safetensors";
+const LOW_NOISE_LORA  = "https://d2p7pge43lyniu.cloudfront.net/output/589c67a8-8007-439d-9a74-6050aa947dac-u1_i2v_A14B_separate_low_noise_lora_0bef2543-44ab-41a5-9f67-6fb7a97a7622.safetensors";
+const HIGH_NOISE_SCALE = 1.2;
+const LOW_NOISE_SCALE  = 0.3;
 
 const DEFAULT_COLORIZE_PROMPT =
   "Colorize this black and white sketch. Preserve the original line art, stroke style, and illustration character exactly — do NOT render it as a photograph or make it photorealistic. Keep it as an illustration. Apply colors that feel natural to the composition.";
@@ -343,8 +347,8 @@ export const useIllustrations = create<IllustrationsStore>()(
             prompt: effectivePrompt,
             duration: 5,
             resolution: "720p",
-            high_noise_loras: [],
-            low_noise_loras: [],
+            high_noise_loras: [{ path: HIGH_NOISE_LORA, scale: HIGH_NOISE_SCALE }],
+            low_noise_loras: [{ path: LOW_NOISE_LORA, scale: LOW_NOISE_SCALE }],
             loras: [],
             last_image: item.endImageBase64
               ? base64ToDataUrl(item.endImageBase64, item.endImageMimeType)
