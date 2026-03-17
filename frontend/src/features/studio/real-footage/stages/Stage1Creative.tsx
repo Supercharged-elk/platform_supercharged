@@ -234,16 +234,19 @@ export function Stage1Creative() {
         </div>
       )}
 
-      {/* Analyze button — optional enrichment step, available while clips are ready */}
-      {readyCount > 0 && !creativeAnalysis && (
+      {/* Analyze button — shown as soon as files are in the UI, no previous analysis */}
+      {slots.length > 0 && !creativeAnalysis && (
         <div className="flex items-center gap-3 flex-wrap">
-          {hasErrors && (
+          {hasErrors && readyCount > 0 && (
             <p className="text-xs text-yellow-500">Some uploads failed — only ready clips will be analyzed.</p>
+          )}
+          {hasErrors && readyCount === 0 && !uploading && (
+            <p className="text-xs text-red-400">All uploads failed — remove the clips and try again.</p>
           )}
           <button
             type="button"
             onClick={() => void handleAnalyze()}
-            disabled={analyzing || uploading}
+            disabled={analyzing || uploading || readyCount === 0}
             className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition disabled:opacity-50"
           >
             {analyzing ? (
@@ -251,10 +254,17 @@ export function Stage1Creative() {
                 <Loader2 size={14} className="animate-spin" />
                 Analyzing with Gemini…
               </>
+            ) : uploading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Waiting for uploads…
+              </>
             ) : (
               <>
                 <Sparkles size={14} />
-                Analyze {readyCount} clip{readyCount !== 1 ? "s" : ""} with Gemini
+                {readyCount > 0
+                  ? `Analyze ${readyCount} clip${readyCount !== 1 ? "s" : ""} with Gemini`
+                  : "Analyze with Gemini"}
               </>
             )}
           </button>
