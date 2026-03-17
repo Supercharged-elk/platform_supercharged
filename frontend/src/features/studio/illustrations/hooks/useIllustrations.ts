@@ -224,8 +224,8 @@ export const useIllustrations = create<IllustrationsStore>()(
 
         try {
           const visionPrompt = item.action.trim()
-            ? `Generate a detailed video animation prompt for this illustration. The animation should: ${item.action.trim()}. Write a cinematic description (max 50 words) of smooth, elegant motion. Respond with ONLY the prompt text, no explanation.`
-            : `Generate a vivid, cinematic video animation prompt (max 50 words) for this illustration. Describe smooth, elegant movement that brings it to life. Respond with ONLY the prompt text, no explanation.`;
+            ? `Write a short animation motion prompt (max 20 words) for a video model that already has this image as reference. Focus ONLY on the movements and actions: ${item.action.trim()}. Do NOT describe the scene, characters, colors, or style. Respond with ONLY the prompt text.`
+            : `Write a short animation motion prompt (max 20 words) for a video model that already has this image as reference. Focus ONLY on the movements and actions visible in the scene. Do NOT describe the scene, characters, colors, or style. Respond with ONLY the prompt text.`;
 
           const text = await analyzeWithVision(visionPrompt, [item.imageBase64]);
           set((s) => ({
