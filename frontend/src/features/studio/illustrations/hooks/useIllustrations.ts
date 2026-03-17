@@ -8,8 +8,8 @@ import { waitForWavespeedPrediction } from "../../_shared/services/wavespeed";
 
 const WAN_MODEL = "wavespeed-ai/wan-2.2/image-to-video-lora";
 
-const HIGH_NOISE_LORA = "https://d2p7pge43lyniu.cloudfront.net/output/589c67a8-8007-439d-9a74-6050aa947dac-u1_i2v_A14B_separate_high_noise_lora_b99f07d8-e78d-4b2f-b077-ddcb52c2cb07.safetensors";
-const LOW_NOISE_LORA  = "https://d2p7pge43lyniu.cloudfront.net/output/589c67a8-8007-439d-9a74-6050aa947dac-u1_i2v_A14B_separate_low_noise_lora_0bef2543-44ab-41a5-9f67-6fb7a97a7622.safetensors";
+const HIGH_NOISE_LORA = "https://huggingface.co/Dantelarroy/mvstyl3-lora/resolve/main/high_noise_lora.safetensors";
+const LOW_NOISE_LORA  = "https://huggingface.co/Dantelarroy/mvstyl3-lora/resolve/main/low_noise_lora.safetensors";
 const HIGH_NOISE_SCALE = 1.2;
 const LOW_NOISE_SCALE  = 0.3;
 
