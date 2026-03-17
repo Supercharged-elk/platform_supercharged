@@ -23,8 +23,6 @@ export interface GeminiFileRef {
   displayName: string;
 }
 
-// Gemini supports larger files; keep this high by default and let deploy env lower it if needed.
-const DEFAULT_RF_MAX_UPLOAD_MB = 512;
 const DEFAULT_DIRECT_UPLOAD_THRESHOLD_MB = 8;
 const SUPPORTED_VIDEO_MIME_TYPES = new Set([
   "video/mp4",
@@ -32,12 +30,6 @@ const SUPPORTED_VIDEO_MIME_TYPES = new Set([
   "video/webm",
   "video/x-matroska",
 ]);
-
-function getConfiguredMaxUploadBytes() {
-  const envVal = Number(process.env.NEXT_PUBLIC_RF_MAX_UPLOAD_MB);
-  const maxMb = Number.isFinite(envVal) && envVal > 0 ? envVal : DEFAULT_RF_MAX_UPLOAD_MB;
-  return Math.floor(maxMb * 1024 * 1024);
-}
 
 export function validateGeminiUploadFile(
   file: File
@@ -48,19 +40,6 @@ export function validateGeminiUploadFile(
       error: {
         code: "UNSUPPORTED_MIME",
         message: "Unsupported video format. Use MP4, MOV, or WebM.",
-        retryable: false,
-      },
-    };
-  }
-
-  const maxBytes = getConfiguredMaxUploadBytes();
-  if (file.size > maxBytes) {
-    const maxMb = Math.round(maxBytes / (1024 * 1024));
-    return {
-      ok: false,
-      error: {
-        code: "FILE_TOO_LARGE",
-        message: `File too large. Max allowed is ${maxMb} MB.`,
         retryable: false,
       },
     };

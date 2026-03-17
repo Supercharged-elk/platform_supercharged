@@ -65,7 +65,7 @@ Standardize `/api/studio/gemini-upload` JSON errors:
 ### B) Preflight validation (client)
 Before sending to API:
 - MIME allowlist for Gemini-supported video types.
-- Configurable max size (e.g. `NEXT_PUBLIC_RF_MAX_UPLOAD_MB`) with high default aligned to Gemini capability.
+- No hard max-size block in client for video uploads (avoid false negatives on large clips).
 - Optional per-file duration check (if needed after field testing).
 
 Rejected files should become slots in `error` with immediate local message (no network call).
@@ -128,9 +128,7 @@ Before implementation is considered done, validate `/api/studio/gemini-upload` w
 - Step 1: mixed results -> warning + analyze enabled.
 
 ## Rollout Plan
-1. Raise default size guardrails (client + server) and keep env overrides:
-   - `NEXT_PUBLIC_RF_MAX_UPLOAD_MB`
-   - `RF_MAX_UPLOAD_MB`
+1. Remove hard max-size guardrails for video uploads in client/server app layer.
 2. Ship behind feature flag `RF_RESUMABLE_UPLOAD` (default on in staging, off in prod initially).
 3. Validate with real clips in staging (small, medium, large, >50MB).
 4. Enable in prod for internal users.

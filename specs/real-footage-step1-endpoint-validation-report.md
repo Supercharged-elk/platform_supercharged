@@ -30,6 +30,7 @@ Date: 2026-03-17
    - Browser-equivalent upload to returned `uploadUrl` with 63 MB clip returns Gemini file metadata (`state=PROCESSING`)
    - `POST /api/studio/gemini-upload` with `{ action: "finalize", fileName }` returns normalized file ref payload
    - Final result: `HTTP 200` with `fileUri` for the same 63 MB clip
+   - Legacy multipart endpoint also no longer returns app-level `FILE_TOO_LARGE` for large clips in local validation.
 
 ## Contract Verified
 - Error payload supports:

@@ -14,8 +14,6 @@ export const runtime = "nodejs";
 
 const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
-// Keep this aligned with client preflight default; tune down via RF_MAX_UPLOAD_MB for constrained deployments.
-const DEFAULT_MAX_UPLOAD_MB = 512;
 const DEFAULT_RESUMABLE_THRESHOLD_MB = 8;
 
 type UploadErrorCode =
@@ -56,12 +54,6 @@ const SUPPORTED_MEDIA_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
 ]);
-
-function getUploadMaxBytes() {
-  const fromEnv = Number(process.env.RF_MAX_UPLOAD_MB);
-  const maxMb = Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_MAX_UPLOAD_MB;
-  return Math.floor(maxMb * 1024 * 1024);
-}
 
 function getResumableThresholdBytes() {
   const fromEnv = Number(process.env.RF_RESUMABLE_THRESHOLD_MB);
@@ -334,14 +326,6 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        const maxUploadBytes = getUploadMaxBytes();
-        if (fileSize > maxUploadBytes) {
-          const maxMb = Math.round(maxUploadBytes / (1024 * 1024));
-          return jsonUploadError(
-            new UploadRouteError("FILE_TOO_LARGE", `File too large. Max allowed is ${maxMb} MB.`, 413)
-          );
-        }
-
         uploadMode = "resumable";
         const start = await startResumableSession({ apiKey, mimeType, displayName, fileSize });
         return NextResponse.json(start);
@@ -446,14 +430,6 @@ export async function POST(req: NextRequest) {
         "Unsupported media format. Use MP4, MOV, WebM, PNG, JPEG, or WebP.",
         415
       )
-    );
-  }
-
-  const maxUploadBytes = getUploadMaxBytes();
-  if (fileSize > maxUploadBytes) {
-    const maxMb = Math.round(maxUploadBytes / (1024 * 1024));
-    return jsonUploadError(
-      new UploadRouteError("FILE_TOO_LARGE", `File too large. Max allowed is ${maxMb} MB.`, 413)
     );
   }
 
