@@ -41,8 +41,12 @@ interface IllustrationsStore {
   confirmColorized: () => void;
 
   // Stage 2
+  setAction: (id: string, action: string) => void;
   setPrompt: (id: string, prompt: string) => void;
-  regeneratePrompt: (id: string) => Promise<void>;
+  enrichPrompt: (id: string) => Promise<void>;
+  togglePromptApproved: (id: string) => void;
+  addExternalImages: (files: File[]) => Promise<void>;
+  removePromptItem: (id: string) => void;
   confirmPrompts: () => void;
 
   // Stage 3
@@ -187,39 +191,84 @@ export const useIllustrations = create<IllustrationsStore>()(
         const prompts: PromptItem[] = approved.map((c) => ({
           id: nanoid(),
           colorizedId: c.id,
+          source: "colorized" as const,
           imageBase64: c.colorizedBase64!,
           mimeType: c.mimeType,
-          prompt: "A smooth animation of this illustration coming to life with gentle movement",
+          action: "",
+          prompt: "",
+          promptStatus: "idle" as const,
           approved: true,
         }));
         set({ prompts, stage: "prompts" });
       },
+
+      setAction: (id, action) =>
+        set((s) => ({
+          prompts: s.prompts.map((p) => (p.id === id ? { ...p, action } : p)),
+        })),
 
       setPrompt: (id, prompt) =>
         set((s) => ({
           prompts: s.prompts.map((p) => (p.id === id ? { ...p, prompt } : p)),
         })),
 
-      regeneratePrompt: async (id) => {
+      enrichPrompt: async (id) => {
         const item = get().prompts.find((p) => p.id === id);
         if (!item) return;
 
+        set((s) => ({
+          prompts: s.prompts.map((p) =>
+            p.id === id ? { ...p, promptStatus: "generating" } : p
+          ),
+        }));
+
         try {
-          const text = await analyzeWithVision(
-            `You are a creative director. Generate a vivid, cinematic video animation prompt (max 40 words) for this colorized illustration.
-The prompt should describe smooth, elegant movement that brings the illustration to life.
-Respond with ONLY the prompt text, no explanation.`,
-            [item.imageBase64]
-          );
+          const visionPrompt = item.action.trim()
+            ? `Generate a detailed video animation prompt for this illustration. The animation should: ${item.action.trim()}. Write a cinematic description (max 50 words) of smooth, elegant motion. Respond with ONLY the prompt text, no explanation.`
+            : `Generate a vivid, cinematic video animation prompt (max 50 words) for this illustration. Describe smooth, elegant movement that brings it to life. Respond with ONLY the prompt text, no explanation.`;
+
+          const text = await analyzeWithVision(visionPrompt, [item.imageBase64]);
           set((s) => ({
             prompts: s.prompts.map((p) =>
-              p.id === id ? { ...p, prompt: text.trim() } : p
+              p.id === id ? { ...p, prompt: text.trim(), promptStatus: "done" } : p
             ),
           }));
-        } catch {
-          // Keep existing prompt on error
+        } catch (e) {
+          set((s) => ({
+            prompts: s.prompts.map((p) =>
+              p.id === id ? { ...p, promptStatus: "idle" } : p
+            ),
+          }));
+          throw e;
         }
       },
+
+      togglePromptApproved: (id) =>
+        set((s) => ({
+          prompts: s.prompts.map((p) =>
+            p.id === id ? { ...p, approved: !p.approved } : p
+          ),
+        })),
+
+      addExternalImages: async (files) => {
+        const items: PromptItem[] = await Promise.all(
+          files.map(async (file) => ({
+            id: nanoid(),
+            colorizedId: null,
+            source: "external" as const,
+            imageBase64: await fileToBase64(file),
+            mimeType: file.type || "image/jpeg",
+            action: "",
+            prompt: "",
+            promptStatus: "idle" as const,
+            approved: true,
+          }))
+        );
+        set((s) => ({ prompts: [...s.prompts, ...items] }));
+      },
+
+      removePromptItem: (id) =>
+        set((s) => ({ prompts: s.prompts.filter((p) => p.id !== id) })),
 
       confirmPrompts: () => {
         const { prompts } = get();

@@ -16,10 +16,13 @@ export interface ColorizedItem {
 
 export interface PromptItem {
   id: string;
-  colorizedId: string;
-  imageBase64: string;      // colorized image
+  colorizedId: string | null;       // null for externally-added images
+  source: "colorized" | "external";
+  imageBase64: string;
   mimeType: string;
-  prompt: string;           // user-editable video prompt
+  action: string;                   // short description: "bird flies through clouds"
+  prompt: string;                   // full animation prompt (generated or manual)
+  promptStatus: "idle" | "generating" | "done";
   approved: boolean;
 }
 
