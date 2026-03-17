@@ -3,11 +3,12 @@
  * Poll a WaveSpeed prediction by ID.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { logStudioEvent } from "@/lib/studio-tracking";
 
 const WAVESPEED_BASE = "https://api.wavespeed.ai/api/v2";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const apiKey = process.env.WAVESPEED_API_KEY;
@@ -29,5 +30,11 @@ export async function GET(
   }
 
   const data = await res.json();
+  const norm = data?.data ?? data;
+  if (norm.status === "completed") {
+    void logStudioEvent(req, "illustrations", "video_succeeded");
+  } else if (norm.status === "failed") {
+    void logStudioEvent(req, "illustrations", "video_failed", { error: norm.error ?? "unknown" });
+  }
   return NextResponse.json(data);
 }

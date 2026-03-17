@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logStudioEvent, pipelineFromReferer } from "@/lib/studio-tracking";
 
 /**
  * POST /api/studio/download
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid base64 data" }, { status: 400 });
   }
 
+  void logStudioEvent(req, pipelineFromReferer(req), "download_single", { filename });
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,
     headers: {

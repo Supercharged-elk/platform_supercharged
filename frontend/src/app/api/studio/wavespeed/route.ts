@@ -4,6 +4,7 @@
  * Returns the prediction object { id, status, ... }
  */
 import { NextRequest, NextResponse } from "next/server";
+import { logStudioEvent } from "@/lib/studio-tracking";
 
 const WAVESPEED_BASE = "https://api.wavespeed.ai/api/v2";
 
@@ -45,5 +46,6 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await res.json();
+  void logStudioEvent(req, "illustrations", "video_started", { model });
   return NextResponse.json(data);
 }

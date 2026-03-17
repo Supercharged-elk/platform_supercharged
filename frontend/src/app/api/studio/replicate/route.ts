@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logStudioEvent } from "@/lib/studio-tracking";
 
 interface StartPayload {
   model: string; // e.g. "kwaivgi/kling-v2.1"
@@ -41,5 +42,6 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await res.json();
+  void logStudioEvent(req, "real_footage", "video_started", { model });
   return NextResponse.json(data);
 }

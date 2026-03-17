@@ -35,5 +35,7 @@ export async function GET(request: NextRequest) {
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  return NextResponse.redirect(`${origin}/canvas`);
+  const next = searchParams.get("next");
+  const destination = next?.startsWith("/") ? next : "/studio";
+  return NextResponse.redirect(`${origin}${destination}`);
 }

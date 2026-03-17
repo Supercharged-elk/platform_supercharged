@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logStudioEvent, pipelineFromReferer } from "@/lib/studio-tracking";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 /** Text analysis model for vision and video tasks */
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest) {
       const data = await callGemini(ANALYSIS_MODEL, apiKey, parts, ["TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
       const text = responseParts.find((p: { text?: string }) => p.text)?.text ?? "";
+      void logStudioEvent(req, pipelineFromReferer(req), "prompt_enriched", { image_count: images.length });
       return NextResponse.json({ text });
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });
@@ -144,13 +146,16 @@ export async function POST(req: NextRequest) {
       type ImgPart = { inlineData?: { data: string; mimeType: string } };
       const imgPart = responseParts.find((p: ImgPart) => p.inlineData) as ImgPart | undefined;
       if (!imgPart?.inlineData) {
+        void logStudioEvent(req, "illustrations", "colorize_failed", { error: "No image returned" });
         return NextResponse.json({ error: "No colorized image returned from Gemini" }, { status: 500 });
       }
+      void logStudioEvent(req, "illustrations", "colorize_succeeded", { has_reference: !!(body as ColorizePayload).referenceBase64 });
       return NextResponse.json({
         base64: imgPart.inlineData.data,
         mimeType: imgPart.inlineData.mimeType,
       });
     } catch (e) {
+      void logStudioEvent(req, "illustrations", "colorize_failed", { error: (e as Error).message });
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });
     }
   }

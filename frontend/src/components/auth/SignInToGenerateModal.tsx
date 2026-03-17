@@ -36,7 +36,7 @@ export function SignInToGenerateModal({ onClose }: SignInToGenerateModalProps) {
           {googleEnabled && (
             <button
               type="button"
-              onClick={signInWithGoogle}
+              onClick={() => signInWithGoogle()}
               className="w-full px-4 py-2.5 bg-white hover:bg-neutral-100 text-black text-sm font-medium rounded-xl transition"
             >
               Continue with Google
@@ -45,7 +45,7 @@ export function SignInToGenerateModal({ onClose }: SignInToGenerateModalProps) {
           {githubEnabled && (
             <button
               type="button"
-              onClick={signInWithGitHub}
+              onClick={() => signInWithGitHub()}
               className="w-full px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-xl transition"
             >
               Continue with GitHub

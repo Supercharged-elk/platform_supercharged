@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logStudioEvent } from "@/lib/studio-tracking";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const token = process.env.REPLICATE_API_TOKEN;
@@ -22,5 +23,10 @@ export async function GET(
   }
 
   const data = await res.json();
+  if (data.status === "succeeded") {
+    void logStudioEvent(req, "real_footage", "video_succeeded");
+  } else if (data.status === "failed" || data.status === "canceled") {
+    void logStudioEvent(req, "real_footage", "video_failed", { error: data.error ?? "unknown" });
+  }
   return NextResponse.json(data);
 }

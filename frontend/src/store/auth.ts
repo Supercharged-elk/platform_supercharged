@@ -18,8 +18,8 @@ interface AuthStore {
 
   init: () => Promise<void>;
   signInAnonymously: () => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  signInWithGitHub: () => Promise<void>;
+  signInWithGoogle: (next?: string) => Promise<void>;
+  signInWithGitHub: (next?: string) => Promise<void>;
   signOut: () => Promise<void>;
   fetchCredits: () => Promise<void>;
 }
@@ -76,14 +76,16 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
 
-  signInWithGoogle: async () => {
-    const redirectTo = `${window.location.origin}/auth/callback`;
+  signInWithGoogle: async (next?: string) => {
+    const base = `${window.location.origin}/auth/callback`;
+    const redirectTo = next ? `${base}?next=${encodeURIComponent(next)}` : base;
     const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
     if (error) throw error;
   },
 
-  signInWithGitHub: async () => {
-    const redirectTo = `${window.location.origin}/auth/callback`;
+  signInWithGitHub: async (next?: string) => {
+    const base = `${window.location.origin}/auth/callback`;
+    const redirectTo = next ? `${base}?next=${encodeURIComponent(next)}` : base;
     const { error } = await supabase.auth.signInWithOAuth({ provider: "github", options: { redirectTo } });
     if (error) throw error;
   },

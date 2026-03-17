@@ -1,19 +1,21 @@
 "use client";
 import { useAuthStore } from "@/store/auth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 export default function LoginPage() {
   const { session, loading, init, signInWithGoogle, signInWithGitHub, signInAnonymously } = useAuthStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get("redirect") ?? "/studio";
 
   useEffect(() => {
     init();
   }, [init]);
 
   useEffect(() => {
-    if (!loading && session) router.replace("/canvas");
-  }, [session, loading, router]);
+    if (!loading && session) router.replace(redirect);
+  }, [session, loading, router, redirect]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-neutral-950">
@@ -25,7 +27,7 @@ export default function LoginPage() {
 
         <div className="flex flex-col gap-3">
           <button
-            onClick={signInWithGoogle}
+            onClick={() => signInWithGoogle(redirect)}
             className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-white text-black rounded-xl font-medium text-sm hover:bg-neutral-100 transition"
           >
             <svg width="18" height="18" viewBox="0 0 18 18">
@@ -38,7 +40,7 @@ export default function LoginPage() {
           </button>
 
           <button
-            onClick={signInWithGitHub}
+            onClick={() => signInWithGitHub(redirect)}
             className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-neutral-800 text-white rounded-xl font-medium text-sm hover:bg-neutral-700 transition border border-neutral-700"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">

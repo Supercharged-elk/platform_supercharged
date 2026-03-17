@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logStudioEvent, pipelineFromReferer } from "@/lib/studio-tracking";
 
 /**
  * POST /api/studio/download-url
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await upstream.arrayBuffer());
   const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
 
+  void logStudioEvent(req, pipelineFromReferer(req), "download_single", { filename });
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,
     headers: {
