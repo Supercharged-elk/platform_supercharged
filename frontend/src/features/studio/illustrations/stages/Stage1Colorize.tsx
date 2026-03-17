@@ -1,12 +1,12 @@
 "use client";
 import { useRef, useState } from "react";
-import { Palette, RefreshCw, Trash2, Check, ChevronRight, AlertTriangle, ImagePlus, X } from "lucide-react";
+import { Palette, RefreshCw, Trash2, Check, ChevronRight, AlertTriangle, ImagePlus, X, Download } from "lucide-react";
 import { useIllustrations } from "../hooks/useIllustrations";
 import type { ColorizedItem } from "../types";
 import { ImageUploader } from "../../_shared/ImageUploader";
 import { GeneratingState } from "../../_shared/GeneratingState";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
-import { base64ToDataUrl, fileToBase64 } from "../../_shared/utils";
+import { base64ToDataUrl, fileToBase64, downloadBase64, downloadAsZip } from "../../_shared/utils";
 
 export function Stage1Colorize() {
   const {
@@ -26,6 +26,7 @@ export function Stage1Colorize() {
   const [appliedInstruction, setAppliedInstruction] = useState("");
 
   const approvedDone = colorized.filter((c) => c.approved && c.status === "done");
+  const doneItems = colorized.filter((c) => c.status === "done" && c.colorizedBase64);
   const anyGenerating = colorized.some((c) => c.status === "generating");
   const anyDone = colorized.some((c) => c.status === "done");
 
@@ -54,6 +55,22 @@ export function Stage1Colorize() {
             Upload your sketches below. Gemini AI will colorize each one. Add per-image instructions or a color reference.
           </p>
         </div>
+        {doneItems.length > 0 && (
+          <button
+            type="button"
+            onClick={() =>
+              downloadAsZip(
+                doneItems.map((c) => ({ base64: c.colorizedBase64!, mimeType: c.mimeType })),
+                doneItems.map((_, i) => `colorized-${i + 1}.jpg`),
+                "colorized.zip"
+              ).catch(console.error)
+            }
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition"
+          >
+            <Download size={14} />
+            Download All ({doneItems.length})
+          </button>
+        )}
       </div>
 
       <ImageUploader
@@ -292,14 +309,31 @@ function ColorizeCard({
         </button>
 
         {item.status === "done" && (
-          <button
-            type="button"
-            onClick={onColorize}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition"
-          >
-            <RefreshCw size={11} />
-            Regenerate
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onColorize}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition"
+            >
+              <RefreshCw size={11} />
+              Regenerate
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadBase64(
+                  item.colorizedBase64!,
+                  item.mimeType,
+                  `colorized-${item.id}.jpg`
+                ).catch(console.error)
+              }
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition"
+              title="Download colorized image"
+            >
+              <Download size={11} />
+              Download
+            </button>
+          </>
         )}
 
         <button
