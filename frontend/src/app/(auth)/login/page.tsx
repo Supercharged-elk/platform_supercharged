@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 function LoginPageContent() {
-  const { session, loading, init, signInWithGoogle, signInWithGitHub, signInAnonymously } = useAuthStore();
+  const { session, loading, init, isAnonymous, signInWithGoogle, signInWithGitHub, signInAnonymously } = useAuthStore();
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") ?? "/studio";
@@ -15,8 +15,8 @@ function LoginPageContent() {
   }, [init]);
 
   useEffect(() => {
-    if (!loading && session) router.replace(redirect);
-  }, [session, loading, router, redirect]);
+    if (!loading && session && !isAnonymous) router.replace(redirect);
+  }, [session, loading, isAnonymous, router, redirect]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-neutral-950">
