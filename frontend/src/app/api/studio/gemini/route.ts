@@ -172,6 +172,9 @@ export async function POST(req: NextRequest) {
       const data = await callGemini(ANALYSIS_MODEL, apiKey, parts, ["TEXT"]);
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
       const text = responseParts.find((p: { text?: string }) => p.text)?.text ?? "";
+      if (!text.trim()) {
+        return NextResponse.json({ error: "Gemini returned no analysis text — the video format may not be supported or the file may have expired." }, { status: 500 });
+      }
       return NextResponse.json({ text });
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });

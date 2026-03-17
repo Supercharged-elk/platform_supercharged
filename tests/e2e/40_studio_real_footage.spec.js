@@ -45,9 +45,10 @@ const FAKE_ACTIONS_STATE = {
     { fileUri: FAKE_FILE_URI, mimeType: 'video/mp4', name: FAKE_FILE_URI, displayName: 'test.mp4' },
   ],
   creativeAnalysis: FAKE_ANALYSIS,
+  actionsText: 'Person walks through a doorway in silhouette\nCamera pans slowly across an empty street at dusk',
   actions: [
-    { id: 'act1', raw: 'Person walks through a doorway in silhouette', enriched: 'Person walks through a doorway in silhouette', approved: true },
-    { id: 'act2', raw: 'Camera pans slowly across an empty street at dusk', enriched: 'Camera pans slowly across an empty street at dusk', approved: true },
+    { id: 'act1', raw: 'Person walks through a doorway in silhouette', imagePrompt: 'Person walks through a doorway in silhouette, cinematic chiaroscuro lighting', videoPrompt: 'Slow motion figure steps through doorway, warm backlight', approved: true },
+    { id: 'act2', raw: 'Camera pans slowly across an empty street at dusk', imagePrompt: 'Empty cobblestone street at dusk, blue-orange gradient sky, desaturated palette', videoPrompt: 'Slow aerial dolly along empty street, dusk light fading', approved: true },
   ],
   keyframes: [],
   videos: [],
@@ -62,12 +63,14 @@ const FAKE_KEYFRAMES_STATE = {
     { fileUri: FAKE_FILE_URI, mimeType: 'video/mp4', name: FAKE_FILE_URI, displayName: 'test.mp4' },
   ],
   creativeAnalysis: FAKE_ANALYSIS,
+  actionsText: FAKE_ACTIONS_STATE.actionsText,
   actions: FAKE_ACTIONS_STATE.actions,
   keyframes: [
     {
       id: 'kf1',
       actionId: 'act1',
-      prompt: 'Person walks through a doorway in silhouette, cinematic',
+      imagePrompt: 'Person walks through a doorway in silhouette, cinematic chiaroscuro lighting',
+      videoPrompt: 'Slow motion figure steps through doorway, warm backlight',
       base64: TINY_JPEG_B64,
       mimeType: 'image/jpeg',
       status: 'done',
@@ -76,7 +79,8 @@ const FAKE_KEYFRAMES_STATE = {
     {
       id: 'kf2',
       actionId: 'act2',
-      prompt: 'Camera pans slowly across an empty street at dusk, cinematic',
+      imagePrompt: 'Camera pans slowly across an empty street at dusk, cinematic',
+      videoPrompt: 'Slow aerial dolly along empty street, dusk light fading',
       base64: null,
       mimeType: 'image/jpeg',
       status: 'idle',
@@ -90,6 +94,7 @@ const FAKE_VIDEOS_STATE = {
   stage: 'videos',
   videoSources: FAKE_KEYFRAMES_STATE.videoSources,
   creativeAnalysis: FAKE_ANALYSIS,
+  actionsText: FAKE_ACTIONS_STATE.actionsText,
   actions: FAKE_ACTIONS_STATE.actions,
   keyframes: FAKE_KEYFRAMES_STATE.keyframes,
   videos: [
@@ -97,7 +102,8 @@ const FAKE_VIDEOS_STATE = {
       id: 'vid1',
       keyframeId: 'kf1',
       base64: TINY_JPEG_B64,
-      prompt: 'Person walks through a doorway in silhouette',
+      imagePrompt: 'Person walks through a doorway in silhouette, cinematic chiaroscuro lighting',
+      videoPrompt: 'Person walks through a doorway in silhouette',
       videoUrl: null,
       status: 'idle',
     },
@@ -152,10 +158,18 @@ function mockOpenAI(page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        result: JSON.stringify([
-          'Enriched: Person emerges from shadow doorway, wide-angle shot with warm backlight, chiaroscuro contrast.',
-          'Enriched: Slow aerial dolly along empty cobblestone street, dusk light, blue-orange color grade.',
-        ]),
+        result: {
+          items: [
+            {
+              imagePrompt: 'Person emerges from shadow doorway, wide-angle shot with warm backlight, chiaroscuro contrast.',
+              videoPrompt: 'Slow motion figure steps through doorway, warm backlight fading in.',
+            },
+            {
+              imagePrompt: 'Slow aerial dolly along empty cobblestone street, dusk light, blue-orange color grade.',
+              videoPrompt: 'Slow aerial pan across empty street, dusk light, smooth camera movement.',
+            },
+          ],
+        },
       }),
     });
   });
@@ -287,7 +301,7 @@ test.describe('Studio — Real Footage pipeline', () => {
     await page.getByRole('button', { name: /Confirm & Review Actions/i }).click();
 
     // Now on Stage 2
-    await expect(page.getByRole('heading', { name: /Review & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
     await expect(page.getByText('Person walks through a doorway in silhouette')).toBeVisible();
     await expect(page.getByText('Camera pans slowly across an empty street at dusk')).toBeVisible();
   });
@@ -295,7 +309,7 @@ test.describe('Studio — Real Footage pipeline', () => {
   // ────────────────────────────────────────────────────────────────────────────
   // RF-05: Stage 2 — AI Enrich All calls GPT-4o, editable enriched text
   // ────────────────────────────────────────────────────────────────────────────
-  test('RF-05: Stage 2 — AI Enrich All calls OpenAI and updates action text', async ({ page }) => {
+  test('RF-05: Stage 2 — Enrich with AI calls OpenAI and updates action prompts', async ({ page }) => {
     test.setTimeout(20000);
     injectRFState(page, FAKE_ACTIONS_STATE);
     mockOpenAI(page);
@@ -309,16 +323,16 @@ test.describe('Studio — Real Footage pipeline', () => {
 
     await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('heading', { name: /Review & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
     // Actions are displayed
     await expect(page.getByText('Person walks through a doorway in silhouette')).toBeVisible();
 
-    // Click "AI Enrich All"
-    await page.getByRole('button', { name: /AI Enrich All/i }).click();
+    // Click "Enrich with AI"
+    await page.getByRole('button', { name: /Enrich with AI/i }).click();
 
-    // Wait for enrichment to complete (loading state then result)
-    await expect(page.getByText(/Enriched: Person emerges from shadow/i)).toBeVisible({ timeout: 10000 });
+    // Wait for enrichment to complete — action cards with imagePrompt textareas appear
+    await expect(page.getByRole('button', { name: /Generate Keyframes for/i })).toBeVisible({ timeout: 10000 });
 
     // Verify OpenAI was called (not Gemini)
     expect(openAICalls.length).toBeGreaterThan(0);
@@ -339,7 +353,7 @@ test.describe('Studio — Real Footage pipeline', () => {
     injectRFState(page, FAKE_ACTIONS_STATE);
 
     await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /Review & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
     // Find the first enriched textarea
     const textarea = page.locator('textarea').first();
@@ -356,7 +370,7 @@ test.describe('Studio — Real Footage pipeline', () => {
     mockGeminiAnalyze(page); // mocks generate mode for keyframes
 
     await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /Review & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
     // Confirm to advance to Stage 3
     await page.getByRole('button', { name: /Generate Keyframes for/i }).click();
@@ -415,7 +429,7 @@ test.describe('Studio — Real Footage pipeline', () => {
     // Editable prompt textarea is visible even when status=idle
     const promptTextarea = page.locator('textarea').first();
     await expect(promptTextarea).toBeVisible();
-    await expect(promptTextarea).toHaveValue('Person walks through a doorway in silhouette');
+    await expect(promptTextarea).toHaveValue('Person walks through a doorway in silhouette'); // vid.videoPrompt
 
     // Can be edited
     await promptTextarea.fill('Slow motion figure steps through an arched doorway');
@@ -475,7 +489,7 @@ test.describe('Studio — Real Footage pipeline', () => {
 
     // Back to actions
     await page.getByRole('button', { name: /Back to Actions/i }).click();
-    await expect(page.getByRole('heading', { name: /Review & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
     // Back to upload/analysis
     await page.getByRole('button', { name: /Back to Analysis/i }).click();
@@ -491,7 +505,7 @@ test.describe('Studio — Real Footage pipeline', () => {
     injectRFState(page, FAKE_ACTIONS_STATE);
 
     await page.goto('/studio/real-footage', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /Review & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Define & Enrich Actions/i })).toBeVisible({ timeout: 5000 });
 
     // First action starts approved (border should be indigo)
     const firstAction = page.locator('[class*="rounded-xl"]').filter({ hasText: 'Person walks through' }).first();
@@ -536,7 +550,8 @@ test.describe('Studio — Real Footage pipeline', () => {
         {
           id: 'kf2',
           actionId: 'act2',
-          prompt: 'Camera pans slowly across an empty street at dusk, cinematic',
+          imagePrompt: 'Camera pans slowly across an empty street at dusk, cinematic',
+          videoPrompt: 'Slow aerial dolly along empty street, dusk light fading',
           base64: null,
           mimeType: 'image/jpeg',
           status: 'idle',

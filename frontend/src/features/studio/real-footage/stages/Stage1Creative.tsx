@@ -234,7 +234,7 @@ export function Stage1Creative() {
         </div>
       )}
 
-      {/* Analyze button */}
+      {/* Analyze button — optional enrichment step, available while clips are ready */}
       {readyCount > 0 && !creativeAnalysis && (
         <div className="flex items-center gap-3 flex-wrap">
           {hasErrors && (
@@ -265,31 +265,34 @@ export function Stage1Creative() {
         <ErrorBlock message={analyzeError} onRetry={() => void handleAnalyze()} />
       )}
 
-      {/* Creative analysis result */}
+      {/* Creative analysis result — shown when Gemini analysis completed */}
       {creativeAnalysis && !analyzing && (
-        <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-neutral-800 border border-neutral-700">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Sparkles size={14} className="text-indigo-400" />
-                <span className="text-xs font-medium text-neutral-300 uppercase tracking-wider">
-                  Creative Analysis
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleAnalyze()}
-                className="text-[10px] text-neutral-500 hover:text-neutral-300 underline transition"
-              >
-                Re-analyze
-              </button>
+        <div className="p-4 rounded-xl bg-neutral-800 border border-neutral-700">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-indigo-400" />
+              <span className="text-xs font-medium text-neutral-300 uppercase tracking-wider">
+                Creative Analysis
+              </span>
             </div>
-            <p className="text-sm text-neutral-300 whitespace-pre-line leading-relaxed">
-              {creativeAnalysis}
-            </p>
+            <button
+              type="button"
+              onClick={() => void handleAnalyze()}
+              className="text-[10px] text-neutral-500 hover:text-neutral-300 underline transition"
+            >
+              Re-analyze
+            </button>
           </div>
+          <p className="text-sm text-neutral-300 whitespace-pre-line leading-relaxed">
+            {creativeAnalysis}
+          </p>
+        </div>
+      )}
 
-          <div className="flex items-center gap-3 flex-wrap">
+      {/* Navigation — always available once clips are uploaded (analysis is optional) */}
+      {(readyCount > 0 || !!creativeAnalysis) && !analyzing && !uploading && (
+        <div className="flex items-center gap-3 flex-wrap">
+          {creativeAnalysis && (
             <button
               type="button"
               onClick={() => {
@@ -301,15 +304,15 @@ export function Stage1Creative() {
             >
               Start Over
             </button>
-            <button
-              type="button"
-              onClick={confirmAnalysis}
-              className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition"
-            >
-              Confirm & Review Actions
-              <ChevronRight size={15} />
-            </button>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={confirmAnalysis}
+            className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition"
+          >
+            {creativeAnalysis ? "Confirm & Review Actions" : "Continue to Stage 2"}
+            <ChevronRight size={15} />
+          </button>
         </div>
       )}
     </div>
