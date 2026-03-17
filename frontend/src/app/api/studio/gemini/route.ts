@@ -115,14 +115,14 @@ export async function POST(req: NextRequest) {
   if (mode === "colorize") {
     const {
       imageBase64,
-      prompt = "Colorize this black and white sketch with vibrant, realistic colors. Keep the original lines and composition intact. Return only the colorized image.",
+      prompt = "Colorize this black and white sketch. Preserve the original line art, stroke style, and illustration character exactly — do NOT render it as a photograph or make it photorealistic. Keep it as an illustration. Apply colors that feel natural to the composition. Return only the colorized image.",
       mimeType,
       referenceBase64,
       referenceMimeType,
     } = body as ColorizePayload;
 
     const referenceNote = referenceBase64
-      ? " Use the color palette, style, lighting, and mood from the reference image as the guide."
+      ? " The second image is a COLOR REFERENCE. Match its color palette, illustration style, rendering technique, and artistic treatment precisely. Adopt the same level of detail, stroke quality, and visual aesthetic — not just the colors. Do not make the result more photorealistic than the reference."
       : "";
 
     // Input uses snake_case inline_data (Gemini REST request format)

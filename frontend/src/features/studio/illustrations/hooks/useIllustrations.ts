@@ -14,7 +14,7 @@ const HIGH_NOISE_SCALE = 1.2;
 const LOW_NOISE_SCALE  = 0.3;
 
 const DEFAULT_COLORIZE_PROMPT =
-  "Colorize this black and white sketch with vibrant, realistic colors. Keep the original lines and composition intact.";
+  "Colorize this black and white sketch. Preserve the original line art, stroke style, and illustration character exactly — do NOT render it as a photograph or make it photorealistic. Keep it as an illustration. Apply colors that feel natural to the composition.";
 
 function buildColorizePrompt(instruction?: string): string {
   if (instruction && instruction.trim()) {
