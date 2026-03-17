@@ -30,6 +30,7 @@ Secondary causes to handle explicitly:
   - `code=FILE_TOO_LARGE`
   - `message=File too large. Max allowed is 50 MB.`
 - Therefore the active production issue is a **local guardrail mismatch** (our cap too low), not an invalid Gemini key.
+- Additional production risk identified: even with higher app limits, Vercel request-body limits can still block large multipart uploads before route logic runs.
 
 ## Goals
 1. Make Step 1 reliable for realistic clip sizes.
@@ -71,9 +72,11 @@ Rejected files should become slots in `error` with immediate local message (no n
 
 ### C) Upload transport strategy
 Implement resilient upload path in `/api/studio/gemini-upload`:
-- Keep multipart path only for small files.
-- Add resumable upload path for larger files (Gemini Files API resumable flow).
-- Avoid unnecessary `Content-Length` manual header where runtime may override/reject.
+- Keep multipart proxy path only for small files.
+- For large files, use Vercel-safe two-phase flow:
+  - `action=start` (server): create Gemini resumable session and return `uploadUrl`.
+  - Browser uploads binary directly to Gemini `uploadUrl` (no large request to Vercel).
+  - `action=finalize` (server): poll and return normalized `{ fileUri, mimeType, name, displayName }`.
 - Preserve existing poll-to-`ACTIVE` logic with capped backoff and clearer timeout errors.
 
 ### D) Observability
@@ -96,13 +99,14 @@ In `Stage1Creative`:
 5. The aggregate message only appears when all slots failed and includes actionable reason.
 6. Existing tests for RF-02/RF-03 keep passing.
 7. Endpoint validation report exists for `/api/studio/gemini-upload` covering success path, error taxonomy, and timeout behavior.
+8. Large clip uploads (e.g. >50 MB) do not send binary payload through app server and complete via direct Gemini resumable upload flow.
 
 ## Endpoint Validation Gate
 Before implementation is considered done, validate `/api/studio/gemini-upload` with evidence for:
 - Request parsing (`multipart/form-data`) and file presence checks.
 - MIME and size policy enforcement.
 - Small-file multipart upload path.
-- Large-file resumable upload path (when feature flag enabled).
+- Large-file direct-resumable handshake path (`start` + browser upload + `finalize`).
 - Stable error contract (`code`, `message`, `retryable`) for known failure modes.
 - Polling behavior to `ACTIVE` and timeout classification.
 

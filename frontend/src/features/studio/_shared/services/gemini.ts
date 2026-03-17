@@ -25,6 +25,7 @@ export interface GeminiFileRef {
 
 // Gemini supports larger files; keep this high by default and let deploy env lower it if needed.
 const DEFAULT_RF_MAX_UPLOAD_MB = 512;
+const DEFAULT_DIRECT_UPLOAD_THRESHOLD_MB = 8;
 const SUPPORTED_VIDEO_MIME_TYPES = new Set([
   "video/mp4",
   "video/quicktime",
@@ -68,6 +69,124 @@ export function validateGeminiUploadFile(
   return { ok: true };
 }
 
+function getDirectUploadThresholdBytes() {
+  const envVal = Number(process.env.NEXT_PUBLIC_RF_DIRECT_UPLOAD_THRESHOLD_MB);
+  const thresholdMb =
+    Number.isFinite(envVal) && envVal > 0 ? envVal : DEFAULT_DIRECT_UPLOAD_THRESHOLD_MB;
+  return Math.floor(thresholdMb * 1024 * 1024);
+}
+
+function withCodeError(
+  message: string,
+  code?: GeminiUploadErrorCode,
+  retryable?: boolean
+) {
+  const err = new Error(message) as Error & {
+    code?: GeminiUploadErrorCode;
+    retryable?: boolean;
+  };
+  err.code = code;
+  err.retryable = retryable;
+  return err;
+}
+
+type GeminiUploadStartResponse = {
+  uploadUrl: string;
+  mimeType: string;
+  displayName: string;
+};
+
+type GeminiUploadFinalizeResponse = GeminiFileRef;
+
+type GeminiUploadFinalizePayload = {
+  file: {
+    name: string;
+    uri?: string;
+    mimeType?: string;
+    displayName?: string;
+    state?: string;
+  };
+};
+
+async function parseUploadError(res: Response): Promise<GeminiUploadErrorPayload> {
+  return (await res
+    .json()
+    .catch(() => ({ error: res.statusText, code: res.status === 413 ? "FILE_TOO_LARGE" : undefined }))) as GeminiUploadErrorPayload;
+}
+
+async function uploadViaDirectResumable(
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<GeminiFileRef> {
+  const mimeType = file.type || "video/mp4";
+  const displayName = file.name || "upload";
+
+  onProgress?.(15);
+
+  const startRes = await fetch(UPLOAD_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "start",
+      mimeType,
+      displayName,
+      fileSize: file.size,
+    }),
+  });
+  if (!startRes.ok) {
+    const err = await parseUploadError(startRes);
+    throw withCodeError(err.message ?? err.error ?? "Gemini upload start failed", err.code, err.retryable);
+  }
+
+  const startData = (await startRes.json()) as GeminiUploadStartResponse;
+  onProgress?.(50);
+
+  const uploadRes = await fetch(startData.uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": startData.mimeType || mimeType,
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: file,
+  });
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    throw withCodeError(
+      `Gemini direct upload failed: ${errText || uploadRes.statusText}`,
+      "UPSTREAM_ERROR",
+      uploadRes.status >= 500
+    );
+  }
+
+  const uploadData = (await uploadRes.json()) as GeminiUploadFinalizePayload;
+  const fileName = uploadData?.file?.name;
+  if (!fileName) {
+    throw withCodeError("Gemini direct upload missing file name", "UPSTREAM_ERROR", true);
+  }
+  onProgress?.(80);
+
+  const finalizeRes = await fetch(UPLOAD_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "finalize",
+      fileName,
+      mimeType: uploadData.file.mimeType || mimeType,
+      displayName: uploadData.file.displayName || displayName,
+      fileUri: uploadData.file.uri,
+      state: uploadData.file.state,
+    }),
+  });
+  if (!finalizeRes.ok) {
+    const err = await parseUploadError(finalizeRes);
+    throw withCodeError(err.message ?? err.error ?? "Gemini upload finalize failed", err.code, err.retryable);
+  }
+
+  onProgress?.(100);
+  return (await finalizeRes.json()) as GeminiUploadFinalizeResponse;
+}
+
 /**
  * Upload a video (or image) File to the Gemini File API.
  * The route handler proxies the upload and waits for state=ACTIVE.
@@ -79,13 +198,12 @@ export async function uploadToGemini(
 ): Promise<GeminiFileRef> {
   const preflight = validateGeminiUploadFile(file);
   if (!preflight.ok) {
-    const err = new Error(preflight.error.message) as Error & {
-      code?: GeminiUploadErrorCode;
-      retryable?: boolean;
-    };
-    err.code = preflight.error.code;
-    err.retryable = preflight.error.retryable;
-    throw err;
+    throw withCodeError(preflight.error.message, preflight.error.code, preflight.error.retryable);
+  }
+
+  // For large files, avoid proxying the binary through the app server (Vercel body limits).
+  if (file.size >= getDirectUploadThresholdBytes()) {
+    return uploadViaDirectResumable(file, onProgress);
   }
 
   // Signal 10% immediately so the UI feels responsive
@@ -102,15 +220,9 @@ export async function uploadToGemini(
   onProgress?.(90);
 
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({ error: res.statusText }))) as GeminiUploadErrorPayload;
+    const err = await parseUploadError(res);
     const message = err.message ?? err.error ?? "Gemini upload failed";
-    const wrapped = new Error(message) as Error & {
-      code?: GeminiUploadErrorCode;
-      retryable?: boolean;
-    };
-    wrapped.code = err.code;
-    wrapped.retryable = err.retryable;
-    throw wrapped;
+    throw withCodeError(message, err.code, err.retryable);
   }
 
   onProgress?.(100);

@@ -25,6 +25,12 @@ Date: 2026-03-17
    - Local endpoint `/api/studio/gemini-upload` for same file before cap adjustment: `HTTP 413 FILE_TOO_LARGE`
    - Conclusion: failure source was local max-size guardrail, not Gemini key validity.
 
+5. Vercel-safe upload flow verification (after fix):
+   - `POST /api/studio/gemini-upload` with `{ action: "start" }` returns `uploadUrl`
+   - Browser-equivalent upload to returned `uploadUrl` with 63 MB clip returns Gemini file metadata (`state=PROCESSING`)
+   - `POST /api/studio/gemini-upload` with `{ action: "finalize", fileName }` returns normalized file ref payload
+   - Final result: `HTTP 200` with `fileUri` for the same 63 MB clip
+
 ## Contract Verified
 - Error payload supports:
   - `code`

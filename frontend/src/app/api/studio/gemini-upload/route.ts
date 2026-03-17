@@ -91,6 +91,24 @@ function parseUpstreamError(raw: string) {
   }
 }
 
+type StartUploadRequest = {
+  action: "start";
+  mimeType?: string;
+  displayName?: string;
+  fileSize?: number;
+};
+
+type FinalizeUploadRequest = {
+  action: "finalize";
+  fileName?: string;
+  mimeType?: string;
+  displayName?: string;
+  fileUri?: string;
+  state?: string;
+};
+
+type UploadActionRequest = StartUploadRequest | FinalizeUploadRequest;
+
 async function pollUntilActive(
   fileName: string,
   apiKey: string,
@@ -124,6 +142,44 @@ async function pollUntilActive(
     waitMs = Math.min(waitMs * 2, 8000);
   }
   throw new UploadRouteError("UPLOAD_TIMEOUT", "Gemini file processing timed out", 504, true);
+}
+
+async function startResumableSession(params: {
+  apiKey: string;
+  mimeType: string;
+  displayName: string;
+  fileSize: number;
+}) {
+  const { apiKey, mimeType, displayName, fileSize } = params;
+  const startRes = await fetch(`${UPLOAD_BASE}/files?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Type": mimeType,
+      "X-Goog-Upload-Header-Content-Length": String(fileSize),
+    },
+    body: JSON.stringify({ file: { display_name: displayName } }),
+  });
+
+  if (!startRes.ok) {
+    const raw = await startRes.text();
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      `Gemini resumable start failed: ${parseUpstreamError(raw)}`,
+      startRes.status >= 400 && startRes.status < 500 ? 400 : 502,
+      startRes.status >= 500,
+      `status=${startRes.status}`
+    );
+  }
+
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) {
+    throw new UploadRouteError("UPSTREAM_ERROR", "Gemini resumable upload URL missing", 502, true);
+  }
+
+  return { uploadUrl, mimeType, displayName };
 }
 
 async function uploadMultipart(params: {
@@ -252,12 +308,124 @@ export async function POST(req: NextRequest) {
   }
 
   let formData: FormData;
+  const contentType = req.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      const body = (await req.json()) as UploadActionRequest;
+
+      if (body.action === "start") {
+        mimeType = body.mimeType || "video/mp4";
+        const displayName = body.displayName || "upload";
+        fileSize = Number(body.fileSize || 0);
+
+        if (!SUPPORTED_MEDIA_MIME_TYPES.has(mimeType)) {
+          return jsonUploadError(
+            new UploadRouteError(
+              "UNSUPPORTED_MIME",
+              "Unsupported media format. Use MP4, MOV, WebM, PNG, JPEG, or WebP.",
+              415
+            )
+          );
+        }
+        if (!Number.isFinite(fileSize) || fileSize <= 0) {
+          return jsonUploadError(
+            new UploadRouteError("INVALID_FORM", "Invalid file size for upload start", 400)
+          );
+        }
+
+        const maxUploadBytes = getUploadMaxBytes();
+        if (fileSize > maxUploadBytes) {
+          const maxMb = Math.round(maxUploadBytes / (1024 * 1024));
+          return jsonUploadError(
+            new UploadRouteError("FILE_TOO_LARGE", `File too large. Max allowed is ${maxMb} MB.`, 413)
+          );
+        }
+
+        uploadMode = "resumable";
+        const start = await startResumableSession({ apiKey, mimeType, displayName, fileSize });
+        return NextResponse.json(start);
+      }
+
+      if (body.action === "finalize") {
+        const fileName = body.fileName || "";
+        const displayName = body.displayName || "upload";
+        const fallbackMimeType = body.mimeType || "video/mp4";
+        const knownUri = body.fileUri;
+        const knownState = body.state;
+        if (!fileName) {
+          return jsonUploadError(new UploadRouteError("INVALID_FORM", "Missing fileName", 400));
+        }
+
+        uploadMode = "resumable";
+        if (knownState && knownState !== "ACTIVE") {
+          await pollUntilActive(fileName, apiKey);
+        } else if (!knownState) {
+          const preRes = await fetch(`${API_BASE}/${fileName}?key=${apiKey}`);
+          if (!preRes.ok) {
+            const raw = await preRes.text();
+            throw new UploadRouteError(
+              "UPSTREAM_ERROR",
+              `File status check failed: ${parseUpstreamError(raw)}`,
+              502,
+              true,
+              `status=${preRes.status}`
+            );
+          }
+          const preData = (await preRes.json()) as { state?: string };
+          if (preData.state !== "ACTIVE") {
+            await pollUntilActive(fileName, apiKey);
+          }
+        }
+
+        const res = await fetch(`${API_BASE}/${fileName}?key=${apiKey}`);
+        if (!res.ok) {
+          const raw = await res.text();
+          throw new UploadRouteError(
+            "UPSTREAM_ERROR",
+            `File fetch failed: ${parseUpstreamError(raw)}`,
+            502,
+            true,
+            `status=${res.status}`
+          );
+        }
+        const data = (await res.json()) as {
+          uri?: string;
+          mimeType?: string;
+          name?: string;
+          displayName?: string;
+        };
+        return NextResponse.json({
+          fileUri: data.uri || knownUri,
+          mimeType: data.mimeType || fallbackMimeType,
+          name: data.name || fileName,
+          displayName: data.displayName || displayName,
+        });
+      }
+
+      return jsonUploadError(new UploadRouteError("INVALID_FORM", "Unknown upload action", 400));
+    } catch (err) {
+      if (err instanceof UploadRouteError) return jsonUploadError(err);
+      const message = err instanceof Error ? err.message : "Invalid upload JSON payload";
+      return jsonUploadError(new UploadRouteError("INVALID_FORM", message, 400));
+    } finally {
+      const elapsedMs = Date.now() - startedAt;
+      console.info(
+        JSON.stringify({
+          event: "studio_gemini_upload",
+          uploadMode,
+          mimeType,
+          fileSize,
+          elapsedMs,
+        })
+      );
+    }
+  }
+
   try {
     formData = await req.formData();
   } catch {
-    return jsonUploadError(
-      new UploadRouteError("INVALID_FORM", "Invalid multipart form data", 400)
-    );
+    return jsonUploadError(new UploadRouteError("INVALID_FORM", "Invalid multipart form data", 400));
   }
 
   const file = formData.get("file") as File | null;
