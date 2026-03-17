@@ -20,6 +20,7 @@ export function Stage1Colorize() {
     toggleApproved,
     removeItem,
     confirmColorized,
+    skipToPrompts,
   } = useIllustrations();
 
   const [globalInstruction, setGlobalInstruction] = useState("");
@@ -137,16 +138,28 @@ export function Stage1Colorize() {
         </div>
       )}
 
-      {approvedDone.length > 0 && !anyGenerating && (
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        {approvedDone.length > 0 && !anyGenerating ? (
+          <button
+            type="button"
+            onClick={confirmColorized}
+            className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition"
+          >
+            Continue with {approvedDone.length} Colorized Image{approvedDone.length !== 1 ? "s" : ""}
+            <ChevronRight size={15} />
+          </button>
+        ) : (
+          <div />
+        )}
         <button
           type="button"
-          onClick={confirmColorized}
-          className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition"
+          onClick={skipToPrompts}
+          className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-300 transition"
         >
-          Generate Prompts for {approvedDone.length} Image{approvedDone.length !== 1 ? "s" : ""}
-          <ChevronRight size={15} />
+          Skip — animate my own images
+          <ChevronRight size={14} />
         </button>
-      )}
+      </div>
     </div>
   );
 }

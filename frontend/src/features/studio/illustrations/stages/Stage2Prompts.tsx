@@ -2,11 +2,11 @@
 import { useRef, useState } from "react";
 import {
   MessageSquare, Sparkles, Check, ChevronRight,
-  ArrowLeft, Trash2, ImagePlus, Loader2,
+  ArrowLeft, Trash2, ImagePlus, Loader2, X,
 } from "lucide-react";
 import { useIllustrations } from "../hooks/useIllustrations";
 import type { PromptItem } from "../types";
-import { base64ToDataUrl } from "../../_shared/utils";
+import { base64ToDataUrl, fileToBase64 } from "../../_shared/utils";
 
 export function Stage2Prompts() {
   const {
@@ -15,6 +15,8 @@ export function Stage2Prompts() {
     setPrompt,
     enrichPrompt,
     togglePromptApproved,
+    setEndImage,
+    removeEndImage,
     addExternalImages,
     removePromptItem,
     confirmPrompts,
@@ -89,6 +91,8 @@ export function Stage2Prompts() {
             onPromptChange={(v) => setPrompt(item.id, v)}
             onEnrich={() => void handleEnrich(item.id)}
             onToggleApproved={() => togglePromptApproved(item.id)}
+            onSetEndImage={(base64, mimeType) => setEndImage(item.id, base64, mimeType)}
+            onRemoveEndImage={() => removeEndImage(item.id)}
             onRemove={() => removePromptItem(item.id)}
           />
         ))}
@@ -129,6 +133,8 @@ interface CardProps {
   onPromptChange: (v: string) => void;
   onEnrich: () => void;
   onToggleApproved: () => void;
+  onSetEndImage: (base64: string, mimeType: string) => void;
+  onRemoveEndImage: () => void;
   onRemove: () => void;
 }
 
@@ -139,9 +145,17 @@ function PromptCard({
   onPromptChange,
   onEnrich,
   onToggleApproved,
+  onSetEndImage,
+  onRemoveEndImage,
   onRemove,
 }: CardProps) {
+  const endImageInputRef = useRef<HTMLInputElement>(null);
   const isGenerating = item.promptStatus === "generating";
+
+  const handleEndImageFile = async (file: File) => {
+    const base64 = await fileToBase64(file);
+    onSetEndImage(base64, file.type || "image/jpeg");
+  };
 
   return (
     <div
@@ -198,6 +212,48 @@ function PromptCard({
                 : <Sparkles size={11} />}
               {isGenerating ? "Generating…" : "Generate"}
             </button>
+          </div>
+
+          {/* End image */}
+          <div className="flex items-center gap-2">
+            {item.endImageBase64 ? (
+              <div className="flex items-center gap-2">
+                <img
+                  src={base64ToDataUrl(item.endImageBase64, item.endImageMimeType)}
+                  alt="End frame"
+                  className="h-8 w-12 object-cover rounded border border-neutral-600"
+                />
+                <span className="text-xs text-neutral-400">End frame</span>
+                <button
+                  type="button"
+                  onClick={onRemoveEndImage}
+                  className="p-0.5 rounded text-neutral-500 hover:text-red-400 transition"
+                  title="Remove end frame"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => endImageInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-neutral-400 hover:text-violet-300 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 hover:border-violet-600 transition"
+              >
+                <ImagePlus size={12} />
+                Add end frame
+              </button>
+            )}
+            <input
+              ref={endImageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleEndImageFile(f);
+                e.target.value = "";
+              }}
+            />
           </div>
 
           {/* Prompt textarea — always visible */}

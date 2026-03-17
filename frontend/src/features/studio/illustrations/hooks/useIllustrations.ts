@@ -40,11 +40,16 @@ interface IllustrationsStore {
   removeItem: (id: string) => void;
   confirmColorized: () => void;
 
+  // Stage 1 → skip
+  skipToPrompts: () => void;
+
   // Stage 2
   setAction: (id: string, action: string) => void;
   setPrompt: (id: string, prompt: string) => void;
   enrichPrompt: (id: string) => Promise<void>;
   togglePromptApproved: (id: string) => void;
+  setEndImage: (id: string, base64: string, mimeType: string) => void;
+  removeEndImage: (id: string) => void;
   addExternalImages: (files: File[]) => Promise<void>;
   removePromptItem: (id: string) => void;
   confirmPrompts: () => void;
@@ -183,6 +188,8 @@ export const useIllustrations = create<IllustrationsStore>()(
       removeItem: (id) =>
         set((s) => ({ colorized: s.colorized.filter((c) => c.id !== id) })),
 
+      skipToPrompts: () => set({ stage: "prompts" }),
+
       confirmColorized: () => {
         const { colorized } = get();
         const approved = colorized.filter(
@@ -198,6 +205,8 @@ export const useIllustrations = create<IllustrationsStore>()(
           prompt: "",
           promptStatus: "idle" as const,
           approved: true,
+          endImageBase64: null,
+          endImageMimeType: "image/jpeg",
         }));
         set({ prompts, stage: "prompts" });
       },
@@ -223,11 +232,17 @@ export const useIllustrations = create<IllustrationsStore>()(
         }));
 
         try {
-          const visionPrompt = item.action.trim()
+          const hasEnd = !!item.endImageBase64;
+          const visionPrompt = hasEnd
+            ? `Write an animation prompt (25-35 words) for a video model. The first image is the start frame, the second is the end frame. Describe the motion transition between them${item.action.trim() ? `, focusing on: ${item.action.trim()}` : ""}. Include what moves, how it moves (direction, speed, smoothness), and how the scene transitions from start to end. Do NOT describe the scene, characters, or colors. Respond with ONLY the prompt text.`
+            : item.action.trim()
             ? `Write an animation prompt (25-35 words) for a video model that already has this image as reference. Describe the motion for: ${item.action.trim()}. Include what moves, how it moves (direction, speed, smoothness), and the feel of the movement. Do NOT describe the scene, characters, colors, or visual style — the model sees the image. Respond with ONLY the prompt text.`
             : `Write an animation prompt (25-35 words) for a video model that already has this image as reference. Describe what moves, how it moves (direction, speed, smoothness), and the feel of the movement. Do NOT describe the scene, characters, colors, or visual style — the model sees the image. Respond with ONLY the prompt text.`;
 
-          const text = await analyzeWithVision(visionPrompt, [item.imageBase64]);
+          const images = [item.imageBase64];
+          if (item.endImageBase64) images.push(item.endImageBase64);
+
+          const text = await analyzeWithVision(visionPrompt, images);
           set((s) => ({
             prompts: s.prompts.map((p) =>
               p.id === id ? { ...p, prompt: text.trim(), promptStatus: "done" } : p
@@ -250,6 +265,20 @@ export const useIllustrations = create<IllustrationsStore>()(
           ),
         })),
 
+      setEndImage: (id, base64, mimeType) =>
+        set((s) => ({
+          prompts: s.prompts.map((p) =>
+            p.id === id ? { ...p, endImageBase64: base64, endImageMimeType: mimeType } : p
+          ),
+        })),
+
+      removeEndImage: (id) =>
+        set((s) => ({
+          prompts: s.prompts.map((p) =>
+            p.id === id ? { ...p, endImageBase64: null } : p
+          ),
+        })),
+
       addExternalImages: async (files) => {
         const items: PromptItem[] = await Promise.all(
           files.map(async (file) => ({
@@ -262,6 +291,8 @@ export const useIllustrations = create<IllustrationsStore>()(
             prompt: "",
             promptStatus: "idle" as const,
             approved: true,
+            endImageBase64: null,
+            endImageMimeType: "image/jpeg",
           }))
         );
         set((s) => ({ prompts: [...s.prompts, ...items] }));
@@ -272,13 +303,15 @@ export const useIllustrations = create<IllustrationsStore>()(
 
       confirmPrompts: () => {
         const { prompts } = get();
-        const approved = prompts.filter((p) => p.approved);
+        const approved = prompts.filter((p) => p.approved && p.prompt.trim());
         const videos: VideoItem[] = approved.map((p) => ({
           id: nanoid(),
           promptId: p.id,
           imageBase64: p.imageBase64,
           mimeType: p.mimeType,
           prompt: p.prompt,
+          endImageBase64: p.endImageBase64,
+          endImageMimeType: p.endImageMimeType,
           videoUrl: null,
           status: "idle",
         }));
@@ -319,6 +352,10 @@ export const useIllustrations = create<IllustrationsStore>()(
             num_frames: 81,
             fps: 16,
           };
+
+          if (item.endImageBase64) {
+            input.end_image = base64ToDataUrl(item.endImageBase64, item.endImageMimeType);
+          }
 
           const videoUrl = await waitForWavespeedPrediction(WAN_MODEL, input);
           set((s) => ({

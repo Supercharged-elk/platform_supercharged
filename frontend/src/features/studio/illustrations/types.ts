@@ -24,6 +24,8 @@ export interface PromptItem {
   prompt: string;                   // full animation prompt (generated or manual)
   promptStatus: "idle" | "generating" | "done";
   approved: boolean;
+  endImageBase64: string | null;    // optional end frame for the video
+  endImageMimeType: string;
 }
 
 export interface VideoItem {
@@ -32,6 +34,8 @@ export interface VideoItem {
   imageBase64: string;
   mimeType: string;
   prompt: string;
+  endImageBase64: string | null;    // passed to WaveSpeed as end_image
+  endImageMimeType: string;
   videoUrl: string | null;
   status: "idle" | "generating" | "done" | "error";
   error?: string;
