@@ -21,9 +21,11 @@ interface GeneratePayload {
 
 interface ColorizePayload {
   mode: "colorize";
-  imageBase64: string; // base64 without prefix
+  imageBase64: string;        // base64 without prefix — the B&W sketch
   prompt?: string;
   mimeType?: string;
+  referenceBase64?: string;   // optional color reference image
+  referenceMimeType?: string;
 }
 
 interface VideoPayload {
@@ -115,13 +117,25 @@ export async function POST(req: NextRequest) {
       imageBase64,
       prompt = "Colorize this black and white sketch with vibrant, realistic colors. Keep the original lines and composition intact. Return only the colorized image.",
       mimeType,
+      referenceBase64,
+      referenceMimeType,
     } = body as ColorizePayload;
+
+    const referenceNote = referenceBase64
+      ? " Use the color palette, style, lighting, and mood from the reference image as the guide."
+      : "";
 
     // Input uses snake_case inline_data (Gemini REST request format)
     const parts: unknown[] = [
-      { text: prompt },
+      { text: prompt + referenceNote },
       { inline_data: { mime_type: mimeType ?? "image/jpeg", data: imageBase64 } },
     ];
+
+    if (referenceBase64) {
+      parts.push({
+        inline_data: { mime_type: referenceMimeType ?? "image/jpeg", data: referenceBase64 },
+      });
+    }
 
     try {
       const data = await callGemini(IMAGE_MODEL, apiKey, parts, ["IMAGE", "TEXT"]);

@@ -31,8 +31,11 @@ interface IllustrationsStore {
 
   // Stage 1
   addSketches: (files: File[]) => Promise<void>;
+  setItemInstruction: (id: string, instruction: string) => void;
+  setItemReference: (id: string, base64: string, mimeType: string) => void;
+  removeItemReference: (id: string) => void;
   colorizeItem: (id: string, instruction?: string) => Promise<void>;
-  colorizeAll: (instruction?: string) => Promise<void>;
+  colorizeAll: (globalInstruction?: string) => Promise<void>;
   toggleApproved: (id: string) => void;
   removeItem: (id: string) => void;
   confirmColorized: () => void;
@@ -87,14 +90,37 @@ export const useIllustrations = create<IllustrationsStore>()(
           files.map(async (file) => ({
             id: nanoid(),
             originalBase64: await fileToBase64(file),
+            originalMimeType: file.type || "image/jpeg",
             colorizedBase64: null,
             mimeType: file.type || "image/jpeg",
             status: "idle" as const,
             approved: true,
+            instruction: "",
+            referenceBase64: null,
+            referenceMimeType: "image/jpeg",
           }))
         );
         set((s) => ({ colorized: [...s.colorized, ...items] }));
       },
+
+      setItemInstruction: (id, instruction) =>
+        set((s) => ({
+          colorized: s.colorized.map((c) => (c.id === id ? { ...c, instruction } : c)),
+        })),
+
+      setItemReference: (id, base64, mimeType) =>
+        set((s) => ({
+          colorized: s.colorized.map((c) =>
+            c.id === id ? { ...c, referenceBase64: base64, referenceMimeType: mimeType } : c
+          ),
+        })),
+
+      removeItemReference: (id) =>
+        set((s) => ({
+          colorized: s.colorized.map((c) =>
+            c.id === id ? { ...c, referenceBase64: null } : c
+          ),
+        })),
 
       colorizeItem: async (id, instruction) => {
         const item = get().colorized.find((c) => c.id === id);
@@ -108,7 +134,13 @@ export const useIllustrations = create<IllustrationsStore>()(
 
         try {
           const prompt = buildColorizePrompt(instruction);
-          const { base64, mimeType } = await colorizeSketch(item.originalBase64, prompt, item.mimeType);
+          const { base64, mimeType } = await colorizeSketch(
+            item.originalBase64,
+            prompt,
+            item.originalMimeType,
+            item.referenceBase64 ?? undefined,
+            item.referenceMimeType
+          );
           set((s) => ({
             colorized: s.colorized.map((c) =>
               c.id === id
@@ -127,9 +159,14 @@ export const useIllustrations = create<IllustrationsStore>()(
         }
       },
 
-      colorizeAll: async (instruction) => {
+      colorizeAll: async (globalInstruction) => {
         const { colorized, colorizeItem } = get();
-        await pLimit(3, colorized.filter((c) => c.status !== "done").map((c) => () => colorizeItem(c.id, instruction)));
+        await pLimit(
+          3,
+          colorized
+            .filter((c) => c.status !== "done")
+            .map((c) => () => colorizeItem(c.id, c.instruction || globalInstruction))
+        );
       },
 
       toggleApproved: (id) =>

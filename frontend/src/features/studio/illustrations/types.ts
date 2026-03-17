@@ -2,12 +2,16 @@ export type IllustrationsStage = "upload" | "prompts" | "videos";
 
 export interface ColorizedItem {
   id: string;
-  originalBase64: string;   // uploaded B&W sketch
+  originalBase64: string;         // uploaded B&W sketch
+  originalMimeType: string;       // mime type of the original
   colorizedBase64: string | null; // Gemini colorized output
-  mimeType: string;
+  mimeType: string;               // mime type of the colorized result
   status: "idle" | "generating" | "done" | "error";
   error?: string;
   approved: boolean;
+  instruction: string;            // per-item instruction (overrides global when non-empty)
+  referenceBase64: string | null; // optional color reference image
+  referenceMimeType: string;      // mime type of the reference
 }
 
 export interface PromptItem {
