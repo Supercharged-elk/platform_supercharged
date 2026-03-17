@@ -347,8 +347,8 @@ export const useIllustrations = create<IllustrationsStore>()(
             prompt: effectivePrompt,
             duration: 5,
             resolution: "720p",
-            high_noise_loras: [{ url: HIGH_NOISE_LORA, scale: HIGH_NOISE_SCALE }],
-            low_noise_loras: [{ url: LOW_NOISE_LORA, scale: LOW_NOISE_SCALE }],
+            high_noise_loras: [{ path: HIGH_NOISE_LORA, scale: HIGH_NOISE_SCALE }],
+            low_noise_loras: [{ path: LOW_NOISE_LORA, scale: LOW_NOISE_SCALE }],
             loras: [],
             last_image: item.endImageBase64
               ? base64ToDataUrl(item.endImageBase64, item.endImageMimeType)
