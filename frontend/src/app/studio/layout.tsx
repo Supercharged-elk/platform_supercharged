@@ -2,12 +2,33 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { StudioNavLinks } from "./StudioNavLinks";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Studio — Canvas Platform",
 };
 
-export default function StudioLayout({ children }: { children: React.ReactNode }) {
+function isAllowedEmail(user: { email?: string; user_metadata?: { email?: string } } | null): boolean {
+  if (!user) return false;
+  const email = user.email ?? (user.user_metadata?.email as string | undefined) ?? "";
+  return email.endsWith("@elkanodata.com");
+}
+
+export default async function StudioLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll() } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!isAllowedEmail(user)) {
+    redirect("/login");
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950">
       {/* Global studio nav */}
