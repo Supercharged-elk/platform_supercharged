@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
-import { Download, RefreshCw, Play, ArrowLeft } from "lucide-react";
+import { Download, RefreshCw, Play, ArrowLeft, Loader2 } from "lucide-react";
 import { useIllustrations } from "../hooks/useIllustrations";
 import { GeneratingState } from "../../_shared/GeneratingState";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
-import { base64ToDataUrl } from "../../_shared/utils";
+import { base64ToDataUrl, downloadFromUrl, downloadAsZip } from "../../_shared/utils";
 
 export function Stage3Videos() {
   const { videos, generateVideo, generateAllVideos, goBack } = useIllustrations();
@@ -14,8 +14,25 @@ export function Stage3Videos() {
     Object.fromEntries(videos.map((v) => [v.id, v.prompt]))
   );
 
-  const doneCount = videos.filter((v) => v.status === "done").length;
+  const [downloadingAll, setDownloadingAll] = useState(false);
+
+  const doneVideos = videos.filter((v) => v.status === "done" && v.videoUrl);
+  const doneCount = doneVideos.length;
   const anyGenerating = videos.some((v) => v.status === "generating");
+
+  const handleDownloadAll = async () => {
+    if (!doneVideos.length) return;
+    setDownloadingAll(true);
+    try {
+      await downloadAsZip(
+        doneVideos.map((v) => ({ url: v.videoUrl! })),
+        doneVideos.map((_, i) => `video-${i + 1}.mp4`),
+        "illustrations-videos.zip"
+      );
+    } finally {
+      setDownloadingAll(false);
+    }
+  };
 
   const setLocalPrompt = (id: string, value: string) =>
     setLocalPrompts((prev) => ({ ...prev, [id]: value }));
@@ -32,15 +49,28 @@ export function Stage3Videos() {
             Each colorized illustration is animated into a video clip.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void generateAllVideos()}
-          disabled={anyGenerating}
-          className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition disabled:opacity-50"
-        >
-          <Play size={14} />
-          Generate All
-        </button>
+        <div className="flex items-center gap-2">
+          {doneCount > 0 && (
+            <button
+              type="button"
+              onClick={() => void handleDownloadAll()}
+              disabled={downloadingAll || anyGenerating}
+              className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition disabled:opacity-50"
+            >
+              {downloadingAll ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {downloadingAll ? "Zipping…" : `Download All (${doneCount})`}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void generateAllVideos()}
+            disabled={anyGenerating}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition disabled:opacity-50"
+          >
+            <Play size={14} />
+            Generate All
+          </button>
+        </div>
       </div>
 
       {doneCount === videos.length && doneCount > 0 && (
@@ -84,14 +114,14 @@ export function Stage3Videos() {
 
               {vid.status === "done" && vid.videoUrl && (
                 <div className="absolute top-2 right-2 flex gap-1">
-                  <a
-                    href={vid.videoUrl}
-                    download
+                  <button
+                    type="button"
+                    onClick={() => void downloadFromUrl(vid.videoUrl!, `video-${vid.id}.mp4`).catch(console.error)}
                     className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white transition"
                     title="Download"
                   >
                     <Download size={13} />
-                  </a>
+                  </button>
                   <button
                     type="button"
                     onClick={() => void generateVideo(vid.id, localPrompts[vid.id])}
