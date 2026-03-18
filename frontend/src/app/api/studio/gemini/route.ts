@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
       if (!imgPart?.inlineData) {
         return NextResponse.json({ error: "No image returned from Gemini" }, { status: 500 });
       }
+      void logStudioEvent(req, pipelineFromReferer(req), "image_generated", {});
       return NextResponse.json({
         base64: imgPart.inlineData.data,
         mimeType: imgPart.inlineData.mimeType,
@@ -173,8 +174,12 @@ export async function POST(req: NextRequest) {
       const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
       const text = responseParts.find((p: { text?: string }) => p.text)?.text ?? "";
       if (!text.trim()) {
-        return NextResponse.json({ error: "Gemini returned no analysis text — the video format may not be supported or the file may have expired." }, { status: 500 });
+        return NextResponse.json(
+          { error: "Gemini returned no analysis for these clips. Check that the files are not expired (Gemini stores uploads for 48 h) and that the video format is supported (MP4, MOV, WebM)." },
+          { status: 500 }
+        );
       }
+      void logStudioEvent(req, "real_footage", "video_analyzed", { file_count: fileUris.length });
       return NextResponse.json({ text });
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });

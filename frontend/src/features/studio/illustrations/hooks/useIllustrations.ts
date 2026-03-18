@@ -135,6 +135,19 @@ export const useIllustrations = create<IllustrationsStore>()(
         const item = get().colorized.find((c) => c.id === id);
         if (!item) return;
 
+        // Guard: originalBase64 is stripped from localStorage persistence.
+        // If item was reloaded from a previous session, the image is not available.
+        if (!item.originalBase64) {
+          set((s) => ({
+            colorized: s.colorized.map((c) =>
+              c.id === id
+                ? { ...c, status: "error", error: "Image not available — remove this item and re-upload the sketch." }
+                : c
+            ),
+          }));
+          return;
+        }
+
         set((s) => ({
           colorized: s.colorized.map((c) =>
             c.id === id ? { ...c, status: "generating", error: undefined } : c
@@ -339,6 +352,18 @@ export const useIllustrations = create<IllustrationsStore>()(
 
         const effectivePrompt = promptOverride ?? item.prompt;
 
+        // Guard: imageBase64 is stripped from localStorage persistence.
+        if (!item.imageBase64) {
+          set((s) => ({
+            videos: s.videos.map((v) =>
+              v.id === id
+                ? { ...v, status: "error", error: "Image not available — go back to Prompts and regenerate." }
+                : v
+            ),
+          }));
+          return;
+        }
+
         try {
           const startImage = base64ToDataUrl(item.imageBase64, item.mimeType);
 
@@ -390,9 +415,32 @@ export const useIllustrations = create<IllustrationsStore>()(
       storage: safeStorage,
       partialize: (s) => ({
         stage: s.stage,
-        colorized: s.colorized,
-        prompts: s.prompts,
-        videos: s.videos,
+        // Strip all base64 fields before persisting to localStorage.
+        // Base64 images (100–500 KB each) overflow the 5–10 MB quota after 3–5 sketches.
+        // Metadata (id, mimeType, instruction, prompt, approved, videoUrl) is preserved.
+        // On reload: items appear as idle; users re-upload or regenerate as needed.
+        colorized: s.colorized.map((c) => ({
+          ...c,
+          originalBase64: "",
+          colorizedBase64: null,
+          referenceBase64: null,
+          status: "idle" as const,
+          approved: false,
+        })),
+        prompts: s.prompts.map((p) => ({
+          ...p,
+          imageBase64: "",
+          endImageBase64: null,
+          promptStatus: "idle" as const,
+          approved: false,
+        })),
+        videos: s.videos.map((v) => ({
+          ...v,
+          imageBase64: "",
+          endImageBase64: null,
+          status: (v.status === "done" ? "idle" : v.status) as VideoItem["status"],
+          error: undefined,
+        })),
       }),
     }
   )
