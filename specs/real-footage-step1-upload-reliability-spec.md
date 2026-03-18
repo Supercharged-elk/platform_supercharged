@@ -1,7 +1,7 @@
 # Spec: Real Footage Step 1 Upload Reliability
 
 ## Status
-Draft for validation
+In progress (diagnosis validated in production)
 
 ## Context
 In `Studio -> Real Footage -> Step 1`, users are seeing: `All uploads failed — remove the clips and try again.`
@@ -17,20 +17,20 @@ This banner is an aggregate UI state shown when every upload slot ends in `error
 ## Root Cause Hypothesis
 Primary cause: architecture mismatch for real video clips.
 
-Step 1 currently relies on a server-side multipart proxy path that is not robust for real-world video sizes and serverless limits. When clips exceed request/runtime constraints (or Gemini rejects multipart payloads), all slots transition to `error`, which surfaces the aggregate banner.
+Step 1 can still hit a server-side multipart proxy path (`POST /api/studio/gemini-upload` with `form-data`). In Vercel serverless this path is constrained by platform payload limits. When payload is blocked at the edge/runtime, all slots move to `error`, surfacing the aggregate banner.
 
 Secondary causes to handle explicitly:
 - Missing `GOOGLE_AI_API_KEY` in deployment env.
 - Unsupported MIME/container returned by browser (`video/quicktime`, etc.).
 - Timeout during Gemini processing poll.
 
-## Root Cause Validated (2026-03-17)
-- Direct upload to Gemini Files API with the configured `GOOGLE_AI_API_KEY` succeeds for a 63 MB clip.
-- Local endpoint `/api/studio/gemini-upload` rejected that same file with:
-  - `code=FILE_TOO_LARGE`
-  - `message=File too large. Max allowed is 50 MB.`
-- Therefore the active production issue is a **local guardrail mismatch** (our cap too low), not an invalid Gemini key.
-- Additional production risk identified: even with higher app limits, Vercel request-body limits can still block large multipart uploads before route logic runs.
+## Root Cause Validated (2026-03-18, production probes)
+- Deployed endpoint `POST /api/studio/gemini-upload` with `action=start` returns `200` and resumable `uploadUrl`.
+- Deployed endpoint multipart upload fails with `413 FUNCTION_PAYLOAD_TOO_LARGE`:
+  - 63 MB clip (`Video_13.mp4`) -> `413`
+  - 6.1 MB clip (`Video_12.mp4`) -> `413`
+- Full direct path (`start` -> browser upload to Gemini upload URL -> `finalize`) succeeds for `Video_13.mp4` and returns `fileUri`.
+- Therefore, production failures are caused by requests still taking the multipart path through Vercel. Gemini/API key are not the blocker.
 
 ## Goals
 1. Make Step 1 reliable for realistic clip sizes.
@@ -72,10 +72,10 @@ Rejected files should become slots in `error` with immediate local message (no n
 
 ### C) Upload transport strategy
 Implement resilient upload path in `/api/studio/gemini-upload`:
-- Keep multipart proxy path only for small files.
-- For large files, use Vercel-safe two-phase flow:
+- Keep multipart proxy path only as legacy fallback.
+- Production path must be two-phase direct upload:
   - `action=start` (server): create Gemini resumable session and return `uploadUrl`.
-  - Browser uploads binary directly to Gemini `uploadUrl` (no large request to Vercel).
+  - Browser uploads binary directly to Gemini `uploadUrl` (no binary payload through Vercel route).
   - `action=finalize` (server): poll and return normalized `{ fileUri, mimeType, name, displayName }`.
 - Preserve existing poll-to-`ACTIVE` logic with capped backoff and clearer timeout errors.
 
@@ -109,6 +109,25 @@ Before implementation is considered done, validate `/api/studio/gemini-upload` w
 - Large-file direct-resumable handshake path (`start` + browser upload + `finalize`).
 - Stable error contract (`code`, `message`, `retryable`) for known failure modes.
 - Polling behavior to `ACTIVE` and timeout classification.
+
+## Spec-Driven Correction Plan
+1. Force production client transport to direct upload.
+- In `uploadToGemini()`, choose direct resumable path in production regardless of file size threshold.
+- Keep size threshold only for local/dev fallback behavior.
+
+2. Validate endpoint behavior with real files (production).
+- Probe `action=start` -> expect `200` with `uploadUrl`.
+- Probe multipart with real clips -> verify current `413 FUNCTION_PAYLOAD_TOO_LARGE` behavior.
+- Probe full direct flow (`start` + direct upload + `finalize`) -> expect `fileUri`.
+
+3. Validate app integrity.
+- `frontend` build must pass.
+- Ensure Stage 1 still maps errors cleanly and supports mixed outcomes.
+
+4. Deployment gate.
+- Push patch and redeploy.
+- Re-test Stage 1 on deployed URL with same clips that previously failed.
+- Confirm no binary request to `/api/studio/gemini-upload` in production upload path (only JSON `start/finalize`).
 
 ## Test Plan
 

@@ -1,6 +1,6 @@
 # Real Footage Step 1 — Endpoint Validation Report
 
-Date: 2026-03-17
+Date: 2026-03-18
 
 ## Scope
 - Endpoint contract alignment for `POST /api/studio/gemini-upload`
@@ -20,17 +20,21 @@ Date: 2026-03-17
    - `RF-15`: unsupported MIME rejected locally, no call to `/api/studio/gemini-upload`
   - `RF-16`: endpoint `FILE_TOO_LARGE` error contract is surfaced in slot + aggregate summary
 
-4. Real-world clip verification (outside app proxy):
-   - Direct Gemini resumable upload (same API key) for `Video_13.mp4` (63 MB): `HTTP 200`
-   - Local endpoint `/api/studio/gemini-upload` for same file before cap adjustment: `HTTP 413 FILE_TOO_LARGE`
-   - Conclusion: failure source was local max-size guardrail, not Gemini key validity.
+4. Production endpoint probes (`platform-supercharged.vercel.app`):
+   - `POST /api/studio/gemini-upload` with `{ action: "start" }`: `HTTP 200` + resumable `uploadUrl`.
+   - Multipart upload with `Video_13.mp4` (63 MB): `HTTP 413` + `x-vercel-error: FUNCTION_PAYLOAD_TOO_LARGE`.
+   - Multipart upload with `Video_12.mp4` (6.1 MB): `HTTP 413` + `x-vercel-error: FUNCTION_PAYLOAD_TOO_LARGE`.
+   - Conclusion: deployed multipart path is blocked by Vercel payload limits, independent of Gemini logic.
 
-5. Vercel-safe upload flow verification (after fix):
-   - `POST /api/studio/gemini-upload` with `{ action: "start" }` returns `uploadUrl`
-   - Browser-equivalent upload to returned `uploadUrl` with 63 MB clip returns Gemini file metadata (`state=PROCESSING`)
-   - `POST /api/studio/gemini-upload` with `{ action: "finalize", fileName }` returns normalized file ref payload
-   - Final result: `HTTP 200` with `fileUri` for the same 63 MB clip
-   - Legacy multipart endpoint also no longer returns app-level `FILE_TOO_LARGE` for large clips in local validation.
+5. Direct resumable end-to-end (production):
+   - `start` on deployed endpoint returns `uploadUrl`.
+   - Binary upload to Gemini `uploadUrl` succeeds when `fileSize` is exact.
+   - `finalize` on deployed endpoint returns normalized payload with `fileUri`.
+   - Final result for `Video_13.mp4` (63 MB): success via direct path (`finalize_ok=true`).
+
+6. Frontend compile/type-check (after transport selection patch):
+   - Command: `npm run build` (in `frontend/`)
+   - Result: PASS
 
 ## Contract Verified
 - Error payload supports:
@@ -41,5 +45,6 @@ Date: 2026-03-17
   - `error` (legacy compatibility alias)
 
 ## Notes
-- Direct ad-hoc HTTP probing from this sandbox environment was limited by local port binding/loopback constraints.
-- Validation was completed through production code-path checks (`next build`) and E2E automation.
+- The observed UI message `most clips exceed the allowed size` maps to `FILE_TOO_LARGE`, which can be triggered by upstream `413`.
+- In production the client must avoid multipart route for binary uploads and use direct resumable flow (`start/upload/finalize`).
+- Playwright suite in this local environment is currently unstable due environment/runtime mismatch (blank-page/timeouts), so deployment diagnosis was based on direct production HTTP probes with real files.

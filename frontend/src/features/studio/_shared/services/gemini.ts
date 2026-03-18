@@ -55,6 +55,12 @@ function getDirectUploadThresholdBytes() {
   return Math.floor(thresholdMb * 1024 * 1024);
 }
 
+function shouldUseDirectUpload(file: File) {
+  // In production deployments (e.g., Vercel), avoid proxying binary through app routes.
+  if (process.env.NODE_ENV === "production") return true;
+  return file.size >= getDirectUploadThresholdBytes();
+}
+
 function withCodeError(
   message: string,
   code?: GeminiUploadErrorCode,
@@ -180,8 +186,8 @@ export async function uploadToGemini(
     throw withCodeError(preflight.error.message, preflight.error.code, preflight.error.retryable);
   }
 
-  // For large files, avoid proxying the binary through the app server (Vercel body limits).
-  if (file.size >= getDirectUploadThresholdBytes()) {
+  // Prefer direct Gemini upload in production; on local/dev use size-based threshold.
+  if (shouldUseDirectUpload(file)) {
     return uploadViaDirectResumable(file, onProgress);
   }
 
