@@ -1,5 +1,6 @@
 const ENDPOINT = "/api/studio/gemini";
 const UPLOAD_ENDPOINT = "/api/studio/gemini-upload";
+const GEMINI_CHUNK_GRANULARITY_BYTES = 8 * 1024 * 1024;
 
 export type GeminiUploadErrorCode =
   | "MISSING_API_KEY"
@@ -115,7 +116,8 @@ async function uploadViaDirectResumable(
 
   // Browser->Gemini direct uploads can be blocked by CORS depending on environment.
   // Upload chunks through our API route (small payload per request) to stay below Vercel limits.
-  const chunkSize = 3 * 1024 * 1024; // 3 MB
+  // Gemini resumable uploads require non-final chunks in 8 MB granularity.
+  const chunkSize = GEMINI_CHUNK_GRANULARITY_BYTES;
   let offset = 0;
   let finalizeChunk: GeminiChunkProxyResponse | null = null;
   while (offset < file.size) {
