@@ -99,7 +99,15 @@ type FinalizeUploadRequest = {
   state?: string;
 };
 
-type UploadActionRequest = StartUploadRequest | FinalizeUploadRequest;
+type UploadChunkActionRequest = {
+  action: "chunk";
+  uploadUrl?: string;
+  offset?: number;
+  finalize?: boolean;
+  mimeType?: string;
+};
+
+type UploadActionRequest = StartUploadRequest | FinalizeUploadRequest | UploadChunkActionRequest;
 
 async function pollUntilActive(
   fileName: string,
@@ -286,6 +294,54 @@ async function uploadResumable(params: {
   return uploadRes.json();
 }
 
+async function proxyResumableChunk(params: {
+  uploadUrl: string;
+  offset: number;
+  finalize: boolean;
+  mimeType: string;
+  chunkBuffer: ArrayBuffer;
+}) {
+  const { uploadUrl, offset, finalize, mimeType, chunkBuffer } = params;
+  const command = finalize ? "upload, finalize" : "upload";
+  const upstream = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": mimeType,
+      "X-Goog-Upload-Offset": String(offset),
+      "X-Goog-Upload-Command": command,
+    },
+    body: chunkBuffer,
+  });
+
+  if (!upstream.ok) {
+    const raw = await upstream.text();
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      `Gemini chunk upload failed: ${parseUpstreamError(raw)}`,
+      upstream.status >= 400 && upstream.status < 500 ? 400 : 502,
+      upstream.status >= 500,
+      `status=${upstream.status}`
+    );
+  }
+
+  if (!finalize) {
+    return { uploaded: true, nextOffset: offset + chunkBuffer.byteLength };
+  }
+
+  const data = (await upstream.json()) as {
+    file?: { name?: string; uri?: string; mimeType?: string; displayName?: string; state?: string };
+  };
+  return {
+    uploaded: true,
+    finalized: true,
+    fileName: data.file?.name,
+    fileUri: data.file?.uri,
+    mimeType: data.file?.mimeType,
+    displayName: data.file?.displayName,
+    state: data.file?.state,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   let uploadMode: "multipart" | "resumable" = "multipart";
@@ -410,6 +466,44 @@ export async function POST(req: NextRequest) {
     formData = await req.formData();
   } catch {
     return jsonUploadError(new UploadRouteError("INVALID_FORM", "Invalid multipart form data", 400));
+  }
+
+  const multipartAction = String(formData.get("action") || "").toLowerCase();
+  if (multipartAction === "chunk") {
+    try {
+      const uploadUrl = String(formData.get("uploadUrl") || "");
+      const offset = Number(formData.get("offset") || 0);
+      const finalize = String(formData.get("finalize") || "0") === "1";
+      const chunk = formData.get("chunk") as File | null;
+      const chunkMimeType = String(formData.get("mimeType") || chunk?.type || "application/octet-stream");
+
+      if (!uploadUrl || !Number.isFinite(offset) || offset < 0 || !chunk) {
+        return jsonUploadError(new UploadRouteError("INVALID_FORM", "Invalid chunk payload", 400));
+      }
+
+      const chunkBuffer = await chunk.arrayBuffer();
+      const chunkResult = await proxyResumableChunk({
+        uploadUrl,
+        offset,
+        finalize,
+        mimeType: chunkMimeType,
+        chunkBuffer,
+      });
+      return NextResponse.json(chunkResult);
+    } catch (err) {
+      if (err instanceof UploadRouteError) return jsonUploadError(err);
+      const message = err instanceof Error ? err.message : "Chunk upload failed";
+      return jsonUploadError(new UploadRouteError("UPSTREAM_ERROR", message, 502, true));
+    } finally {
+      const elapsedMs = Date.now() - startedAt;
+      console.info(
+        JSON.stringify({
+          event: "studio_gemini_upload_chunk",
+          uploadMode: "resumable",
+          elapsedMs,
+        })
+      );
+    }
   }
 
   const file = formData.get("file") as File | null;

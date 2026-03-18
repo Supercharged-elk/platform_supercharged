@@ -69,14 +69,15 @@ type GeminiUploadStartResponse = {
 
 type GeminiUploadFinalizeResponse = GeminiFileRef;
 
-type GeminiUploadFinalizePayload = {
-  file: {
-    name: string;
-    uri?: string;
-    mimeType?: string;
-    displayName?: string;
-    state?: string;
-  };
+type GeminiChunkProxyResponse = {
+  uploaded?: boolean;
+  nextOffset?: number;
+  finalized?: boolean;
+  fileName?: string;
+  fileUri?: string;
+  mimeType?: string;
+  displayName?: string;
+  state?: string;
 };
 
 async function parseUploadError(res: Response): Promise<GeminiUploadErrorPayload> {
@@ -110,28 +111,42 @@ async function uploadViaDirectResumable(
   }
 
   const startData = (await startRes.json()) as GeminiUploadStartResponse;
-  onProgress?.(50);
+  onProgress?.(30);
 
-  const uploadRes = await fetch(startData.uploadUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": startData.mimeType || mimeType,
-      "X-Goog-Upload-Offset": "0",
-      "X-Goog-Upload-Command": "upload, finalize",
-    },
-    body: file,
-  });
-  if (!uploadRes.ok) {
-    const errText = await uploadRes.text();
-    throw withCodeError(
-      `Gemini direct upload failed: ${errText || uploadRes.statusText}`,
-      "UPSTREAM_ERROR",
-      uploadRes.status >= 500
-    );
+  // Browser->Gemini direct uploads can be blocked by CORS depending on environment.
+  // Upload chunks through our API route (small payload per request) to stay below Vercel limits.
+  const chunkSize = 3 * 1024 * 1024; // 3 MB
+  let offset = 0;
+  let finalizeChunk: GeminiChunkProxyResponse | null = null;
+  while (offset < file.size) {
+    const end = Math.min(offset + chunkSize, file.size);
+    const chunk = file.slice(offset, end);
+    const isFinal = end >= file.size;
+
+    const form = new FormData();
+    form.append("action", "chunk");
+    form.append("uploadUrl", startData.uploadUrl);
+    form.append("offset", String(offset));
+    form.append("finalize", isFinal ? "1" : "0");
+    form.append("mimeType", startData.mimeType || mimeType);
+    form.append("chunk", chunk, file.name);
+
+    const chunkRes = await fetch(UPLOAD_ENDPOINT, { method: "POST", body: form });
+    if (!chunkRes.ok) {
+      const err = await parseUploadError(chunkRes);
+      throw withCodeError(
+        err.message ?? err.error ?? "Gemini chunk upload failed",
+        err.code ?? "UPSTREAM_ERROR",
+        err.retryable
+      );
+    }
+    const chunkData = (await chunkRes.json()) as GeminiChunkProxyResponse;
+    offset = end;
+    if (isFinal) finalizeChunk = chunkData;
+    onProgress?.(30 + Math.floor((offset / file.size) * 50));
   }
 
-  const uploadData = (await uploadRes.json()) as GeminiUploadFinalizePayload;
-  const fileName = uploadData?.file?.name;
+  const fileName = finalizeChunk?.fileName;
   if (!fileName) {
     throw withCodeError("Gemini direct upload missing file name", "UPSTREAM_ERROR", true);
   }
@@ -143,10 +158,10 @@ async function uploadViaDirectResumable(
     body: JSON.stringify({
       action: "finalize",
       fileName,
-      mimeType: uploadData.file.mimeType || mimeType,
-      displayName: uploadData.file.displayName || displayName,
-      fileUri: uploadData.file.uri,
-      state: uploadData.file.state,
+      mimeType: finalizeChunk?.mimeType || mimeType,
+      displayName: finalizeChunk?.displayName || displayName,
+      fileUri: finalizeChunk?.fileUri,
+      state: finalizeChunk?.state,
     }),
   });
   if (!finalizeRes.ok) {
