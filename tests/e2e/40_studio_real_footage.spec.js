@@ -113,17 +113,37 @@ const FAKE_VIDEOS_STATE = {
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
 function mockGeminiUpload(page) {
+  // Mock the Supabase Storage signed URL PUT upload (direct browser-to-Supabase upload)
+  page.route('**/storage/v1/object/**', async (route) => {
+    if (route.request().method() === 'PUT') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ Key: 'rf-temp/test/test-clip.mp4' }) });
+    } else {
+      await route.continue();
+    }
+  });
+
   page.route('**/api/studio/gemini-upload', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        fileUri: FAKE_FILE_URI,
-        mimeType: 'video/mp4',
-        name: FAKE_FILE_URI,
-        displayName: 'test.mp4',
-      }),
-    });
+    const body = route.request().postDataJSON();
+    if (body?.action === 'storage_start') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ bucket: 'rf-temp', path: 'test/test-clip.mp4', token: 'fake-signed-token' }),
+      });
+    } else if (body?.action === 'storage_ingest') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ fileUri: FAKE_FILE_URI, mimeType: 'video/mp4', name: FAKE_FILE_URI, displayName: 'test.mp4' }),
+      });
+    } else {
+      // Legacy multipart path
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ fileUri: FAKE_FILE_URI, mimeType: 'video/mp4', name: FAKE_FILE_URI, displayName: 'test.mp4' }),
+      });
+    }
   });
 }
 
