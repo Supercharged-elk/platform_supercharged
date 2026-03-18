@@ -139,6 +139,33 @@ function getStorageBucket() {
   return process.env.RF_UPLOAD_BUCKET || DEFAULT_STORAGE_BUCKET;
 }
 
+function isMissingBucketErrorMessage(message?: string) {
+  const normalized = (message || "").toLowerCase();
+  return (
+    normalized.includes("related resource does not exist") ||
+    normalized.includes("bucket not found") ||
+    normalized.includes("not found")
+  );
+}
+
+async function ensureStorageBucketExists(
+  supabaseAdmin: any,
+  bucket: string
+) {
+  const { error } = await supabaseAdmin.storage.createBucket(bucket, {
+    public: false,
+  });
+  // Ignore "already exists" style failures; bubble up everything else.
+  if (error && !/already exists|duplicate/i.test(error.message || "")) {
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      `Storage bucket ensure failed: ${error.message}`,
+      502,
+      true
+    );
+  }
+}
+
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -473,9 +500,15 @@ export async function POST(req: NextRequest) {
         const supabaseAdmin = getSupabaseAdmin();
         const bucket = getStorageBucket();
         const path = `studio/rf/${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${sanitizeFileName(displayName)}`;
-        const { data, error } = await supabaseAdmin.storage
+        let { data, error } = await supabaseAdmin.storage
           .from(bucket)
           .createSignedUploadUrl(path);
+        if (error && isMissingBucketErrorMessage(error.message)) {
+          await ensureStorageBucketExists(supabaseAdmin, bucket);
+          const retried = await supabaseAdmin.storage.from(bucket).createSignedUploadUrl(path);
+          data = retried.data;
+          error = retried.error;
+        }
         if (error || !data?.token) {
           throw new UploadRouteError(
             "UPSTREAM_ERROR",
