@@ -23,7 +23,6 @@ export interface GeminiFileRef {
   displayName: string;
 }
 
-const DEFAULT_DIRECT_UPLOAD_THRESHOLD_MB = 8;
 const SUPPORTED_VIDEO_MIME_TYPES = new Set([
   "video/mp4",
   "video/quicktime",
@@ -46,19 +45,6 @@ export function validateGeminiUploadFile(
   }
 
   return { ok: true };
-}
-
-function getDirectUploadThresholdBytes() {
-  const envVal = Number(process.env.NEXT_PUBLIC_RF_DIRECT_UPLOAD_THRESHOLD_MB);
-  const thresholdMb =
-    Number.isFinite(envVal) && envVal > 0 ? envVal : DEFAULT_DIRECT_UPLOAD_THRESHOLD_MB;
-  return Math.floor(thresholdMb * 1024 * 1024);
-}
-
-function shouldUseDirectUpload(file: File) {
-  // In production deployments (e.g., Vercel), avoid proxying binary through app routes.
-  if (process.env.NODE_ENV === "production") return true;
-  return file.size >= getDirectUploadThresholdBytes();
 }
 
 function withCodeError(
@@ -186,32 +172,9 @@ export async function uploadToGemini(
     throw withCodeError(preflight.error.message, preflight.error.code, preflight.error.retryable);
   }
 
-  // Prefer direct Gemini upload in production; on local/dev use size-based threshold.
-  if (shouldUseDirectUpload(file)) {
-    return uploadViaDirectResumable(file, onProgress);
-  }
-
-  // Signal 10% immediately so the UI feels responsive
-  onProgress?.(10);
-
-  const form = new FormData();
-  form.append("file", file);
-
-  const res = await fetch(UPLOAD_ENDPOINT, {
-    method: "POST",
-    body: form,
-  });
-
-  onProgress?.(90);
-
-  if (!res.ok) {
-    const err = await parseUploadError(res);
-    const message = err.message ?? err.error ?? "Gemini upload failed";
-    throw withCodeError(message, err.code, err.retryable);
-  }
-
-  onProgress?.(100);
-  return res.json();
+  // Always use direct Gemini resumable upload for videos.
+  // This avoids proxying binary payloads through app routes (e.g., Vercel payload limits).
+  return uploadViaDirectResumable(file, onProgress);
 }
 
 /**
