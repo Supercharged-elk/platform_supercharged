@@ -48,3 +48,15 @@ Date: 2026-03-18
 - The observed UI message `most clips exceed the allowed size` maps to `FILE_TOO_LARGE`, which can be triggered by upstream `413`.
 - In production the client must avoid multipart route for binary uploads and use direct resumable flow (`start/upload/finalize`).
 - Playwright suite in this local environment is currently unstable due environment/runtime mismatch (blank-page/timeouts), so deployment diagnosis was based on direct production HTTP probes with real files.
+
+## Update (2026-03-18, second fix cycle)
+- New evidence from browser session:
+  - `start` returned `uploadUrl` correctly.
+  - Direct upload response from Gemini was `200`, but UI still showed `Failed to fetch`.
+  - Chunk proxy via Vercel produced either:
+    - `FUNCTION_PAYLOAD_TOO_LARGE` (Vercel limit), or
+    - Gemini `400` when chunk granularity rules were violated.
+- Final correction implemented:
+  - Stage 1 now uploads to Supabase Storage via signed upload URL.
+  - Server ingests staged object to Gemini and returns file ref.
+  - This removes direct browser->Gemini CORS dependency and avoids Vercel body-size limits on client upload requests.

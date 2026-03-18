@@ -1,6 +1,7 @@
+import { supabase } from "@/lib/supabase";
+
 const ENDPOINT = "/api/studio/gemini";
 const UPLOAD_ENDPOINT = "/api/studio/gemini-upload";
-const GEMINI_CHUNK_GRANULARITY_BYTES = 8 * 1024 * 1024;
 
 export type GeminiUploadErrorCode =
   | "MISSING_API_KEY"
@@ -62,23 +63,14 @@ function withCodeError(
   return err;
 }
 
-type GeminiUploadStartResponse = {
-  uploadUrl: string;
-  mimeType: string;
-  displayName: string;
-};
-
 type GeminiUploadFinalizeResponse = GeminiFileRef;
 
-type GeminiChunkProxyResponse = {
-  uploaded?: boolean;
-  nextOffset?: number;
-  finalized?: boolean;
-  fileName?: string;
-  fileUri?: string;
+type GeminiStorageStartResponse = {
+  bucket: string;
+  path: string;
+  token: string;
   mimeType?: string;
   displayName?: string;
-  state?: string;
 };
 
 async function parseUploadError(res: Response): Promise<GeminiUploadErrorPayload> {
@@ -96,83 +88,63 @@ async function uploadViaDirectResumable(
 
   onProgress?.(15);
 
-  const startRes = await fetch(UPLOAD_ENDPOINT, {
+  const storageStartRes = await fetch(UPLOAD_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      action: "start",
+      action: "storage_start",
       mimeType,
       displayName,
-      fileSize: file.size,
     }),
   });
-  if (!startRes.ok) {
-    const err = await parseUploadError(startRes);
-    throw withCodeError(err.message ?? err.error ?? "Gemini upload start failed", err.code, err.retryable);
+  if (!storageStartRes.ok) {
+    const err = await parseUploadError(storageStartRes);
+    throw withCodeError(
+      err.message ?? err.error ?? "Storage upload URL creation failed",
+      err.code ?? "UPSTREAM_ERROR",
+      err.retryable
+    );
   }
+  const storageStart = (await storageStartRes.json()) as GeminiStorageStartResponse;
 
-  const startData = (await startRes.json()) as GeminiUploadStartResponse;
-  onProgress?.(30);
-
-  // Browser->Gemini direct uploads can be blocked by CORS depending on environment.
-  // Upload chunks through our API route (small payload per request) to stay below Vercel limits.
-  // Gemini resumable uploads require non-final chunks in 8 MB granularity.
-  const chunkSize = GEMINI_CHUNK_GRANULARITY_BYTES;
-  let offset = 0;
-  let finalizeChunk: GeminiChunkProxyResponse | null = null;
-  while (offset < file.size) {
-    const end = Math.min(offset + chunkSize, file.size);
-    const chunk = file.slice(offset, end);
-    const isFinal = end >= file.size;
-
-    const form = new FormData();
-    form.append("action", "chunk");
-    form.append("uploadUrl", startData.uploadUrl);
-    form.append("offset", String(offset));
-    form.append("finalize", isFinal ? "1" : "0");
-    form.append("mimeType", startData.mimeType || mimeType);
-    form.append("chunk", chunk, file.name);
-
-    const chunkRes = await fetch(UPLOAD_ENDPOINT, { method: "POST", body: form });
-    if (!chunkRes.ok) {
-      const err = await parseUploadError(chunkRes);
-      throw withCodeError(
-        err.message ?? err.error ?? "Gemini chunk upload failed",
-        err.code ?? "UPSTREAM_ERROR",
-        err.retryable
-      );
-    }
-    const chunkData = (await chunkRes.json()) as GeminiChunkProxyResponse;
-    offset = end;
-    if (isFinal) finalizeChunk = chunkData;
-    onProgress?.(30 + Math.floor((offset / file.size) * 50));
+  onProgress?.(35);
+  const { error: uploadError } = await supabase.storage
+    .from(storageStart.bucket)
+    .uploadToSignedUrl(storageStart.path, storageStart.token, file, {
+      contentType: mimeType,
+    });
+  if (uploadError) {
+    throw withCodeError(
+      `Storage upload failed: ${uploadError.message}`,
+      "UPSTREAM_ERROR",
+      true
+    );
   }
+  onProgress?.(75);
 
-  const fileName = finalizeChunk?.fileName;
-  if (!fileName) {
-    throw withCodeError("Gemini direct upload missing file name", "UPSTREAM_ERROR", true);
-  }
-  onProgress?.(80);
-
-  const finalizeRes = await fetch(UPLOAD_ENDPOINT, {
+  const ingestRes = await fetch(UPLOAD_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      action: "finalize",
-      fileName,
-      mimeType: finalizeChunk?.mimeType || mimeType,
-      displayName: finalizeChunk?.displayName || displayName,
-      fileUri: finalizeChunk?.fileUri,
-      state: finalizeChunk?.state,
+      action: "storage_ingest",
+      bucket: storageStart.bucket,
+      path: storageStart.path,
+      mimeType,
+      displayName,
+      cleanup: true,
     }),
   });
-  if (!finalizeRes.ok) {
-    const err = await parseUploadError(finalizeRes);
-    throw withCodeError(err.message ?? err.error ?? "Gemini upload finalize failed", err.code, err.retryable);
+  if (!ingestRes.ok) {
+    const err = await parseUploadError(ingestRes);
+    throw withCodeError(
+      err.message ?? err.error ?? "Gemini storage ingest failed",
+      err.code ?? "UPSTREAM_ERROR",
+      err.retryable
+    );
   }
 
   onProgress?.(100);
-  return (await finalizeRes.json()) as GeminiUploadFinalizeResponse;
+  return (await ingestRes.json()) as GeminiUploadFinalizeResponse;
 }
 
 /**

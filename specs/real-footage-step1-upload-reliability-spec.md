@@ -32,6 +32,13 @@ Secondary causes to handle explicitly:
 - Full direct path (`start` -> browser upload to Gemini upload URL -> `finalize`) succeeds for `Video_13.mp4` and returns `fileUri`.
 - Therefore, production failures are caused by requests still taking the multipart path through Vercel. Gemini/API key are not the blocker.
 
+## Additional Root Cause (2026-03-18)
+- Browser direct upload to Gemini returned `Failed to fetch` intermittently in UI despite upstream `200` responses in network traces.
+- Proxy chunk workaround through Vercel failed with:
+  - `FUNCTION_PAYLOAD_TOO_LARGE` for large chunks due Vercel request body limits.
+  - Gemini resumable constraint requiring `8MB` chunk granularity for non-final chunks.
+- Combined effect: Vercel request size limits and Gemini chunk constraints are incompatible for browser->Vercel chunk relay.
+
 ## Goals
 1. Make Step 1 reliable for realistic clip sizes.
 2. Return deterministic, user-actionable errors.
@@ -111,23 +118,25 @@ Before implementation is considered done, validate `/api/studio/gemini-upload` w
 - Polling behavior to `ACTIVE` and timeout classification.
 
 ## Spec-Driven Correction Plan
-1. Force production client transport to direct upload.
-- In `uploadToGemini()`, choose direct resumable path in production regardless of file size threshold.
-- Keep size threshold only for local/dev fallback behavior.
+1. Use Supabase Storage as upload staging.
+- Add `storage_start` action in `/api/studio/gemini-upload` to mint signed upload URL/token for a temp object.
+- Browser uploads video directly to Supabase Storage using signed URL (no large request to Vercel).
 
-2. Validate endpoint behavior with real files (production).
-- Probe `action=start` -> expect `200` with `uploadUrl`.
-- Probe multipart with real clips -> verify current `413 FUNCTION_PAYLOAD_TOO_LARGE` behavior.
-- Probe full direct flow (`start` + direct upload + `finalize`) -> expect `fileUri`.
+2. Ingest from Supabase to Gemini on server side.
+- Add `storage_ingest` action in `/api/studio/gemini-upload`.
+- Route downloads staged object from Supabase with service-role credentials.
+- Route uploads buffer to Gemini (multipart/resumable as needed), polls to `ACTIVE`, returns normalized file ref.
+- Cleanup staged object after successful ingest (best effort).
 
-3. Validate app integrity.
-- `frontend` build must pass.
-- Ensure Stage 1 still maps errors cleanly and supports mixed outcomes.
+3. Keep backwards compatibility.
+- Preserve existing `start/finalize` and legacy multipart paths to avoid breaking other workflows.
+- Stage 1 switches to `storage_start -> uploadToSignedUrl -> storage_ingest`.
 
-4. Deployment gate.
-- Push patch and redeploy.
-- Re-test Stage 1 on deployed URL with same clips that previously failed.
-- Confirm no binary request to `/api/studio/gemini-upload` in production upload path (only JSON `start/finalize`).
+4. Validation gate.
+- `npm run build` must pass.
+- Verify with real problematic clips.
+- Verify no `FUNCTION_PAYLOAD_TOO_LARGE` from Vercel during client upload phase.
+- Verify returned payload includes `fileUri`.
 
 ## Test Plan
 

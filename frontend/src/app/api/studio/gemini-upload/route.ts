@@ -4,10 +4,11 @@
  * Returns { fileUri, mimeType, name }.
  *
  * The Gemini File API stores files for 48 hours.
- * Max file size limited by Vercel body limit (~4.5 MB on Hobby, ~50 MB on Pro).
- * For large files, use resumable upload (future work).
+ * Browser uploads are staged in Supabase Storage, then ingested server-side to Gemini.
+ * This avoids Vercel request payload limits for direct media uploads.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const maxDuration = 300; // seconds — Vercel Pro required for > 10 s
 export const runtime = "nodejs";
@@ -15,6 +16,7 @@ export const runtime = "nodejs";
 const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_RESUMABLE_THRESHOLD_MB = 8;
+const DEFAULT_STORAGE_BUCKET = "rf-temp";
 
 type UploadErrorCode =
   | "MISSING_API_KEY"
@@ -107,7 +109,48 @@ type UploadChunkActionRequest = {
   mimeType?: string;
 };
 
-type UploadActionRequest = StartUploadRequest | FinalizeUploadRequest | UploadChunkActionRequest;
+type StorageStartUploadRequest = {
+  action: "storage_start";
+  mimeType?: string;
+  displayName?: string;
+};
+
+type StorageIngestUploadRequest = {
+  action: "storage_ingest";
+  bucket?: string;
+  path?: string;
+  mimeType?: string;
+  displayName?: string;
+  cleanup?: boolean;
+};
+
+type UploadActionRequest =
+  | StartUploadRequest
+  | FinalizeUploadRequest
+  | UploadChunkActionRequest
+  | StorageStartUploadRequest
+  | StorageIngestUploadRequest;
+
+function sanitizeFileName(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(-160);
+}
+
+function getStorageBucket() {
+  return process.env.RF_UPLOAD_BUCKET || DEFAULT_STORAGE_BUCKET;
+}
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRole) {
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      "Supabase storage is not configured",
+      500
+    );
+  }
+  return createClient(supabaseUrl, serviceRole);
+}
 
 async function pollUntilActive(
   fileName: string,
@@ -342,6 +385,58 @@ async function proxyResumableChunk(params: {
   };
 }
 
+async function uploadBufferToGemini(params: {
+  apiKey: string;
+  mimeType: string;
+  displayName: string;
+  fileBuffer: ArrayBuffer;
+}) {
+  const { apiKey, mimeType, displayName, fileBuffer } = params;
+  const fileSize = fileBuffer.byteLength;
+  const resumableThresholdBytes = getResumableThresholdBytes();
+  const resumableEnabled = process.env.RF_RESUMABLE_UPLOAD !== "0";
+
+  let uploadData: {
+    file?: { state?: string; name: string; uri: string; mimeType?: string; displayName?: string };
+  };
+  if (resumableEnabled && fileSize >= resumableThresholdBytes) {
+    uploadData = (await uploadResumable({
+      apiKey,
+      mimeType,
+      displayName,
+      fileBuffer,
+    })) as typeof uploadData;
+  } else {
+    uploadData = (await uploadMultipart({
+      apiKey,
+      mimeType,
+      displayName,
+      fileBuffer,
+    })) as typeof uploadData;
+  }
+
+  const geminiFile = uploadData.file;
+  if (!geminiFile?.name || !geminiFile?.uri) {
+    throw new UploadRouteError(
+      "UPSTREAM_ERROR",
+      "Gemini upload response missing file metadata",
+      502,
+      true
+    );
+  }
+
+  if (geminiFile.state !== "ACTIVE") {
+    await pollUntilActive(geminiFile.name, apiKey);
+  }
+
+  return {
+    fileUri: geminiFile.uri,
+    mimeType: geminiFile.mimeType || mimeType,
+    name: geminiFile.name,
+    displayName: geminiFile.displayName || displayName,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   let uploadMode: "multipart" | "resumable" = "multipart";
@@ -361,6 +456,82 @@ export async function POST(req: NextRequest) {
   if (contentType.includes("application/json")) {
     try {
       const body = (await req.json()) as UploadActionRequest;
+
+      if (body.action === "storage_start") {
+        mimeType = body.mimeType || "video/mp4";
+        const displayName = body.displayName || "upload";
+        if (!SUPPORTED_MEDIA_MIME_TYPES.has(mimeType)) {
+          return jsonUploadError(
+            new UploadRouteError(
+              "UNSUPPORTED_MIME",
+              "Unsupported media format. Use MP4, MOV, WebM, PNG, JPEG, or WebP.",
+              415
+            )
+          );
+        }
+
+        const supabaseAdmin = getSupabaseAdmin();
+        const bucket = getStorageBucket();
+        const path = `studio/rf/${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${sanitizeFileName(displayName)}`;
+        const { data, error } = await supabaseAdmin.storage
+          .from(bucket)
+          .createSignedUploadUrl(path);
+        if (error || !data?.token) {
+          throw new UploadRouteError(
+            "UPSTREAM_ERROR",
+            `Storage signed upload URL creation failed: ${error?.message || "unknown error"}`,
+            502,
+            true
+          );
+        }
+        uploadMode = "resumable";
+        return NextResponse.json({
+          bucket,
+          path,
+          token: data.token,
+          mimeType,
+          displayName,
+        });
+      }
+
+      if (body.action === "storage_ingest") {
+        const bucket = body.bucket || getStorageBucket();
+        const path = body.path || "";
+        const displayName = body.displayName || "upload";
+        mimeType = body.mimeType || "video/mp4";
+        if (!path) {
+          return jsonUploadError(new UploadRouteError("INVALID_FORM", "Missing storage path", 400));
+        }
+
+        const supabaseAdmin = getSupabaseAdmin();
+        const { data: blob, error: downloadError } = await supabaseAdmin.storage
+          .from(bucket)
+          .download(path);
+        if (downloadError || !blob) {
+          throw new UploadRouteError(
+            "UPSTREAM_ERROR",
+            `Storage download failed: ${downloadError?.message || "unknown error"}`,
+            502,
+            true
+          );
+        }
+
+        const fileBuffer = await blob.arrayBuffer();
+        fileSize = fileBuffer.byteLength;
+        uploadMode = "resumable";
+        const uploaded = await uploadBufferToGemini({
+          apiKey,
+          mimeType,
+          displayName,
+          fileBuffer,
+        });
+
+        const shouldCleanup = body.cleanup !== false;
+        if (shouldCleanup) {
+          await supabaseAdmin.storage.from(bucket).remove([path]).catch(() => undefined);
+        }
+        return NextResponse.json(uploaded);
+      }
 
       if (body.action === "start") {
         mimeType = body.mimeType || "video/mp4";
@@ -529,44 +700,17 @@ export async function POST(req: NextRequest) {
 
   try {
     const fileBuffer = await file.arrayBuffer();
-    const resumableThresholdBytes = getResumableThresholdBytes();
-    const resumableEnabled = process.env.RF_RESUMABLE_UPLOAD !== "0";
-
-    let uploadData: { file?: { state?: string; name: string; uri: string; mimeType?: string; displayName?: string } };
-    if (resumableEnabled && fileSize >= resumableThresholdBytes) {
-      uploadMode = "resumable";
-      uploadData = (await uploadResumable({
-        apiKey,
-        mimeType,
-        displayName,
-        fileBuffer,
-      })) as typeof uploadData;
-    } else {
-      uploadMode = "multipart";
-      uploadData = (await uploadMultipart({
-        apiKey,
-        mimeType,
-        displayName,
-        fileBuffer,
-      })) as typeof uploadData;
-    }
-
-    const geminiFile = uploadData.file;
-    if (!geminiFile?.name || !geminiFile?.uri) {
-      throw new UploadRouteError("UPSTREAM_ERROR", "Gemini upload response missing file metadata", 502, true);
-    }
-
-    // If state is already ACTIVE (small files), skip polling
-    if (geminiFile.state !== "ACTIVE") {
-      await pollUntilActive(geminiFile.name, apiKey);
-    }
-
-    return NextResponse.json({
-      fileUri: geminiFile.uri,
-      mimeType: geminiFile.mimeType || mimeType,
-      name: geminiFile.name,
-      displayName: geminiFile.displayName || displayName,
+    uploadMode =
+      process.env.RF_RESUMABLE_UPLOAD !== "0" && fileSize >= getResumableThresholdBytes()
+        ? "resumable"
+        : "multipart";
+    const uploaded = await uploadBufferToGemini({
+      apiKey,
+      mimeType,
+      displayName,
+      fileBuffer,
     });
+    return NextResponse.json(uploaded);
   } catch (err) {
     if (err instanceof UploadRouteError) return jsonUploadError(err);
     const message = err instanceof Error ? err.message : "Unknown upload error";
