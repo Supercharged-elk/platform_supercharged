@@ -3,8 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 const SUPABASE_URL = 'https://qxhuyctdrbdbzprblhmz.supabase.co';
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4aHV5Y3RkcmJkYnpwcmJsaG16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MDgzNDMsImV4cCI6MjA4ODk4NDM0M30.G6EdoXP7nvXWbpNyOYBUb4MxsC1XgJrCSKUj82B0gr8';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4aHV5Y3RkcmJkYnpwcmJsaG16Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQwODM0MywiZXhwIjoyMDg4OTg0MzQzfQ.LWNH00lJzlGM-ZVczvEo0RTdXmIEoDFg5fka4cBb6b8';
+const ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const STORAGE_KEY = 'sb-qxhuyctdrbdbzprblhmz-auth-token';
 const CACHED_USER_PATH = path.join(__dirname, '.test-user-cache.json');
 
