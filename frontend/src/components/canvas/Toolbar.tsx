@@ -1,6 +1,6 @@
 "use client";
 import { useCallback } from "react";
-import { useCanvasStore } from "@/store/canvas";
+import { useCanvasStore, styledEdge } from "@/store/canvas";
 import { MessageSquare, Cpu, Zap, Wand2, Film, Images, ImageIcon, Video } from "lucide-react";
 
 const NODE_DEFS = [
@@ -83,9 +83,63 @@ export function Toolbar() {
         ];
 
         const templateEdges = [
-          { id: `e_${promptFinalId}_${multiRefId}_prompt`, source: promptFinalId, target: multiRefId, sourceHandle: "output", targetHandle: "prompt" },
-          { id: `e_${modelId}_${multiRefId}_cfg`, source: modelId, target: multiRefId, sourceHandle: "output", targetHandle: "config" },
-          { id: `e_${multiRefId}_${imageOutId}_out`, source: multiRefId, target: imageOutId, sourceHandle: "output", targetHandle: "input" },
+          styledEdge({ id: `e_${promptFinalId}_${multiRefId}_prompt`, source: promptFinalId, target: multiRefId, sourceHandle: "output", targetHandle: "prompt" }, "promptNode", "output"),
+          styledEdge({ id: `e_${modelId}_${multiRefId}_cfg`, source: modelId, target: multiRefId, sourceHandle: "output", targetHandle: "config" }, "modelSelectorNode", "output"),
+          styledEdge({ id: `e_${multiRefId}_${imageOutId}_out`, source: multiRefId, target: imageOutId, sourceHandle: "output", targetHandle: "input" }, "multiRefNode", "output"),
+        ];
+
+        setNodes([...nodes, ...templateNodes]);
+        setEdges([...edges, ...templateEdges]);
+        return;
+      }
+
+      if (type === "editNode") {
+        const allIds = nodes.map((n) => n.id);
+        const workingIds = [...allIds];
+        const makeId = (nodeType: string) => {
+          const id = nextNodeId(nodeType, workingIds);
+          workingIds.push(id);
+          return id;
+        };
+
+        const baseX = 80 + Math.random() * 120;
+        const baseY = 80 + Math.random() * 80;
+        const promptId = makeId("promptNode");
+        const modelId = makeId("modelSelectorNode");
+        const editId = makeId("editNode");
+        const imageOutId = makeId("imageOutputNode");
+
+        const templateNodes = [
+          {
+            id: promptId,
+            type: "promptNode",
+            position: { x: baseX, y: baseY },
+            data: { prompt: "Describe the edit to apply" },
+          },
+          {
+            id: modelId,
+            type: "modelSelectorNode",
+            position: { x: baseX, y: baseY + 180 },
+            data: { title: "Edit Model", required_task: "edit" },
+          },
+          {
+            id: editId,
+            type: "editNode",
+            position: { x: baseX + 360, y: baseY + 60 },
+            data: {},
+          },
+          {
+            id: imageOutId,
+            type: "imageOutputNode",
+            position: { x: baseX + 680, y: baseY + 80 },
+            data: {},
+          },
+        ];
+
+        const templateEdges = [
+          styledEdge({ id: `e_${promptId}_${editId}_prompt`, source: promptId, target: editId, sourceHandle: "output", targetHandle: "prompt" }, "promptNode", "output"),
+          styledEdge({ id: `e_${modelId}_${editId}_cfg`, source: modelId, target: editId, sourceHandle: "output", targetHandle: "config" }, "modelSelectorNode", "output"),
+          styledEdge({ id: `e_${editId}_${imageOutId}_out`, source: editId, target: imageOutId, sourceHandle: "output", targetHandle: "input" }, "editNode", "output"),
         ];
 
         setNodes([...nodes, ...templateNodes]);

@@ -1,4 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
+import { styledEdge } from "@/store/canvas";
 
 export function buildSimpleDemoGraph(): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [
@@ -23,20 +24,14 @@ export function buildSimpleDemoGraph(): { nodes: Node[]; edges: Edge[] } {
   ];
 
   const edges: Edge[] = [
-    {
-      id: "demo_e1",
-      source: "demo_prompt",
-      target: "demo_generate",
-      sourceHandle: "output",
-      targetHandle: "prompt",
-    },
-    {
-      id: "demo_e2",
-      source: "demo_generate",
-      target: "demo_output",
-      sourceHandle: "output",
-      targetHandle: "input",
-    },
+    styledEdge(
+      { id: "demo_e1", source: "demo_prompt", target: "demo_generate", sourceHandle: "output", targetHandle: "prompt" },
+      "promptNode", "output"
+    ),
+    styledEdge(
+      { id: "demo_e2", source: "demo_generate", target: "demo_output", sourceHandle: "output", targetHandle: "input" },
+      "generateNode", "output"
+    ),
   ];
 
   return { nodes, edges };

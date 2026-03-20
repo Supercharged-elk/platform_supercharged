@@ -35,18 +35,26 @@ const FAKE_COLORIZED_STATE = {
     {
       id: 'col1',
       originalBase64: TINY_JPEG_B64,
+      originalMimeType: 'image/jpeg',
       colorizedBase64: TINY_JPEG_B64,
       mimeType: 'image/jpeg',
       status: 'done',
       approved: true,
+      instruction: '',
+      referenceBase64: null,
+      referenceMimeType: 'image/jpeg',
     },
     {
       id: 'col2',
       originalBase64: TINY_JPEG_B64,
+      originalMimeType: 'image/jpeg',
       colorizedBase64: null,
       mimeType: 'image/jpeg',
       status: 'idle',
       approved: true,
+      instruction: '',
+      referenceBase64: null,
+      referenceMimeType: 'image/jpeg',
     },
   ],
   prompts: [],
@@ -60,10 +68,15 @@ const FAKE_PROMPTS_STATE = {
     {
       id: 'prm1',
       colorizedId: 'col1',
+      source: 'colorized',
       imageBase64: TINY_JPEG_B64,
       mimeType: 'image/jpeg',
+      action: '',
       prompt: 'A smooth animation of this illustration coming to life with gentle movement',
+      promptStatus: 'done',
       approved: true,
+      endImageBase64: null,
+      endImageMimeType: 'image/jpeg',
     },
   ],
   videos: [],
@@ -80,6 +93,8 @@ const FAKE_VIDEOS_STATE = {
       imageBase64: TINY_JPEG_B64,
       mimeType: 'image/jpeg',
       prompt: 'A smooth animation of this illustration coming to life with gentle movement',
+      endImageBase64: null,
+      endImageMimeType: 'image/jpeg',
       videoUrl: null,
       status: 'idle',
     },
@@ -142,6 +157,16 @@ function mockWaveSpeed(page) {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 test.describe('Studio — Illustrations pipeline', () => {
+
+  // Bypass the @elkanodata.com auth gate for E2E tests (dev only)
+  test.beforeEach(async ({ page }) => {
+    await page.context().addCookies([{
+      name: 'e2e_auth_bypass',
+      value: '1',
+      domain: 'localhost',
+      path: '/',
+    }]);
+  });
 
   // ────────────────────────────────────────────────────────────────────────────
   // IL-01: Illustrations page renders with upload zone
@@ -213,7 +238,7 @@ test.describe('Studio — Illustrations pipeline', () => {
     // Instruction field visible
     const instructionField = page.getByPlaceholder(/warm earthy tones/i);
     await expect(instructionField).toBeVisible();
-    await expect(page.getByText(/Colorization instructions \(optional\)/i)).toBeVisible();
+    await expect(page.getByText(/Global colorization instructions/i)).toBeVisible();
 
     // Since col1 is 'done', changing the instruction shows a warning
     await instructionField.fill('cool blue tones, minimal shadows');
@@ -265,14 +290,14 @@ test.describe('Studio — Illustrations pipeline', () => {
     await page.goto('/studio/illustrations', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /Upload & Colorize Sketches/i })).toBeVisible({ timeout: 5000 });
 
-    // "Generate Prompts for N Images" button is visible (col1 is done+approved)
-    const confirmBtn = page.getByRole('button', { name: /Generate Prompts for/i });
+    // "Continue with N Colorized Images" button is visible (col1 is done+approved)
+    const confirmBtn = page.getByRole('button', { name: /Continue with/i });
     await expect(confirmBtn).toBeVisible();
     await confirmBtn.click();
 
     // Now on Stage 2
-    await expect(page.getByRole('heading', { name: /Review Video Prompts/i })).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText(/A smooth animation of this illustration/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Review Animation Prompts/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByPlaceholder(/Describe the action/i)).toBeVisible();
   });
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -291,7 +316,7 @@ test.describe('Studio — Illustrations pipeline', () => {
     });
 
     await page.goto('/studio/illustrations', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /Review Video Prompts/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Review Animation Prompts/i })).toBeVisible({ timeout: 5000 });
 
     // Prompt textarea is editable
     const promptTextarea = page.locator('textarea').first();
@@ -300,7 +325,7 @@ test.describe('Studio — Illustrations pipeline', () => {
     await expect(promptTextarea).toHaveValue('Colors dance and shimmer as the illustration awakens');
 
     // Regenerate prompt button
-    await page.getByRole('button', { name: /Regenerate Prompt/i }).click();
+    await page.getByRole('button', { name: /Generate/i }).click();
 
     // Wait for regenerated text
     await expect(page.locator('textarea').first()).toContainText('watercolor', { timeout: 10000 });
@@ -318,21 +343,21 @@ test.describe('Studio — Illustrations pipeline', () => {
     injectILState(page, FAKE_PROMPTS_STATE);
 
     await page.goto('/studio/illustrations', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /Review Video Prompts/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Review Animation Prompts/i })).toBeVisible({ timeout: 5000 });
 
-    // Item starts approved — "Generate N Videos" button should be visible
-    const confirmBtn = page.getByRole('button', { name: /Generate.*Video/i }).first();
+    // Item starts approved — "Animate N Images" button should be visible
+    const confirmBtn = page.getByRole('button', { name: /Animate/i }).first();
     await expect(confirmBtn).toBeVisible();
 
     // Toggle to unapprove
     await page.getByRole('button', { name: /Approved/i }).click();
     // Now unapproved → confirm button should disappear (0 approved)
-    await expect(page.getByRole('button', { name: /Generate.*Video/i })).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('button', { name: /Animate/i })).not.toBeVisible({ timeout: 3000 });
 
     // Re-approve
     await page.getByRole('button', { name: /Approve/i }).click();
     // Confirm button reappears
-    await expect(page.getByRole('button', { name: /Generate.*Video/i })).toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('button', { name: /Animate/i })).toBeVisible({ timeout: 3000 });
     await confirmBtn.click();
 
     // Now on Stage 3
@@ -375,15 +400,15 @@ test.describe('Studio — Illustrations pipeline', () => {
     // Model should be WAN-2.2 LoRA
     expect(call?.model).toMatch(/wan-2\.2.*lora/i);
 
-    // Input should contain LoRA params
+    // Input should contain LoRA params (sent as arrays)
     const input = call?.input ?? {};
-    expect(input.high_noise_lora).toBeTruthy();
-    expect(input.low_noise_lora).toBeTruthy();
-    expect(input.high_noise_lora_scale).toBe(1.2);
-    expect(input.low_noise_lora_scale).toBe(0.3);
+    expect(Array.isArray(input.high_noise_loras) && input.high_noise_loras.length > 0).toBe(true);
+    expect(Array.isArray(input.low_noise_loras) && input.low_noise_loras.length > 0).toBe(true);
+    expect(input.high_noise_loras[0].scale).toBe(1.2);
+    expect(input.low_noise_loras[0].scale).toBe(0.3);
     expect(input.prompt).toContain('Custom animated illustration prompt');
-    expect(input.num_frames).toBe(81);
-    expect(input.fps).toBe(16);
+    expect(input.duration).toBe(5);
+    expect(input.resolution).toBe('720p');
 
     await page.screenshot({ path: 'test-results/IL-08-wavespeed-call.png' });
   });
@@ -455,7 +480,7 @@ test.describe('Studio — Illustrations pipeline', () => {
 
     // Back to prompts
     await page.getByRole('button', { name: /Back to Prompts/i }).click();
-    await expect(page.getByRole('heading', { name: /Review Video Prompts/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Review Animation Prompts/i })).toBeVisible({ timeout: 5000 });
 
     // Back to colorize
     await page.getByRole('button', { name: /Back to Colorize/i }).click();
@@ -493,15 +518,15 @@ test.describe('Studio — Illustrations pipeline', () => {
     await page.goto('/studio/illustrations', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /Upload & Colorize Sketches/i })).toBeVisible({ timeout: 5000 });
 
-    // col1 is done+approved → "Generate Prompts for 1 Image"
-    await expect(page.getByRole('button', { name: /Generate Prompts for 1 Image/i })).toBeVisible({ timeout: 5000 });
+    // col1 is done+approved → "Continue with 1 Colorized Image"
+    await expect(page.getByRole('button', { name: /Continue with 1 Colorized Image/i })).toBeVisible({ timeout: 5000 });
 
     // Unapprove col1
     const approveBtn = page.getByRole('button', { name: /Approved/i }).first();
     await approveBtn.click();
 
     // Button should disappear (0 approved done)
-    await expect(page.getByRole('button', { name: /Generate Prompts for/i })).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('button', { name: /Continue with/i })).not.toBeVisible({ timeout: 3000 });
   });
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -513,11 +538,11 @@ test.describe('Studio — Illustrations pipeline', () => {
     mockGeminiColorize(page);
 
     await page.goto('/studio/illustrations', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: /Review Video Prompts/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Review Animation Prompts/i })).toBeVisible({ timeout: 5000 });
 
     const before = await page.locator('textarea').first().inputValue();
 
-    await page.getByRole('button', { name: /Regenerate Prompt/i }).click();
+    await page.getByRole('button', { name: /Generate/i }).click();
     await page.waitForTimeout(3000);
 
     const after = await page.locator('textarea').first().inputValue();

@@ -1,13 +1,19 @@
 "use client";
-import { useState } from "react";
-import { Download, RefreshCw, Video, Play, ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Download, RefreshCw, Video, Play, ArrowLeft, ImagePlus } from "lucide-react";
 import { useRealFootage } from "../hooks/useRealFootage";
 import { GeneratingState } from "../../_shared/GeneratingState";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
+import { JobProgressBar } from "../../_shared/JobProgressBar";
 import { base64ToDataUrl, downloadAsZip, downloadFromUrl } from "../../_shared/utils";
 
 export function Stage4Videos() {
-  const { videos, generateVideo, generateAllVideos, goBack } = useRealFootage();
+  const { videos, addExternalVideos, generateVideo, generateAllVideos, goBack, resumePolling } = useRealFootage();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void resumePolling();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Local per-card editable prompts — initialized from vid.videoPrompt
   const [localPrompts, setLocalPrompts] = useState<Record<string, string>>(() =>
@@ -33,6 +39,25 @@ export function Stage4Videos() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition"
+          >
+            <ImagePlus size={14} />
+            Add Images
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.length) void addExternalVideos(Array.from(e.target.files));
+              e.target.value = "";
+            }}
+          />
           {doneCount > 0 && (
             <button
               type="button"
@@ -158,6 +183,11 @@ export function Stage4Videos() {
           </div>
         ))}
       </div>
+
+      <JobProgressBar
+        items={videos.map((v) => ({ id: v.id, status: v.status, error: v.error }))}
+        accentColor="indigo"
+      />
 
       {/* Bottom navigation */}
       <div className="flex items-center justify-between pt-2">

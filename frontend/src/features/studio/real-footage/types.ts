@@ -38,6 +38,7 @@ export interface VideoItem {
   videoUrl: string | null;
   status: "idle" | "generating" | "done" | "error";
   error?: string;
+  predictionId?: string | null; // Replicate prediction ID — persisted to resume polling on reload
 }
 
 export interface RealFootageState {

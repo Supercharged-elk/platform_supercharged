@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from auth import get_auth, AuthContext, get_supabase
 from limiter import limiter
+from routers.models import PLATFORM_MODEL_IDS
 from credit_manager import check_and_deduct
 from enricher import enrich_prompt
 from progress_tracker import run_prediction_with_progress, mark_complete, mark_failed
@@ -37,7 +38,7 @@ async def generate(request: Request, req: GenerateRequest, auth: AuthContext = D
     brand_tone = None
     quality_bar = None
 
-    if req.model_config_id:
+    if req.model_config_id and req.model_config_id not in PLATFORM_MODEL_IDS:
         cfg = sb.table("model_configs").select("*").eq("id", req.model_config_id).limit(1).execute()
         cfg_row = cfg.data[0] if cfg and cfg.data else None
         if cfg_row:

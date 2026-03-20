@@ -97,10 +97,10 @@ async function createTestUser() {
     user: data.user,
   };
 
-  // Trigger backend to seed the credits row (seeds 0/0/0 for anon) before we PATCH
-  await fetch('http://localhost:8000/credits', {
+  // Trigger Next.js credits route to seed the credits row
+  await fetch('http://localhost:3000/api/canvas/credits', {
     headers: { Authorization: 'Bearer ' + data.access_token },
-  });
+  }).catch(() => {}); // non-fatal if server not up
 
   // PATCH to set real credits — POST would 409 because row now exists from above seed
   await fetch(`${SUPABASE_URL}/rest/v1/credits?user_id=eq.${userId}`, {
@@ -148,6 +148,18 @@ async function injectSession(page, session) {
   }]);
 }
 
+async function setE2EBypass(page) {
+  await page.context().addCookies([{
+    name: 'e2e_auth_bypass',
+    value: '1',
+    domain: 'localhost',
+    path: '/',
+    httpOnly: false,
+    secure: false,
+    sameSite: 'Lax',
+  }]);
+}
+
 async function goToCanvas(page, session) {
   // Inject session cookie BEFORE navigating so @supabase/ssr finds it on first load
   await injectSession(page, session);
@@ -178,7 +190,7 @@ async function waitForNodeComplete(page, timeoutMs) {
  * Returns the workflow ID to be loaded via ?workflow=ID.
  */
 async function createWorkflow(token, name, graphJson) {
-  const resp = await fetch('http://localhost:8000/workflows', {
+  const resp = await fetch('http://localhost:3000/api/canvas/workflows', {
     method: 'POST',
     headers: {
       Authorization: 'Bearer ' + token,
@@ -204,6 +216,7 @@ async function goToWorkflow(page, session, workflowId) {
 module.exports = {
   createTestUser,
   injectSession,
+  setE2EBypass,
   goToCanvas,
   goToWorkflow,
   createWorkflow,

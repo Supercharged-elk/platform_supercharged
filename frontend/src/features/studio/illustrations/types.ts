@@ -39,6 +39,7 @@ export interface VideoItem {
   videoUrl: string | null;
   status: "idle" | "generating" | "done" | "error";
   error?: string;
+  predictionId?: string | null; // WaveSpeed prediction ID — persisted to resume polling on reload
 }
 
 export interface IllustrationsState {

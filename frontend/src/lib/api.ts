@@ -3,7 +3,9 @@
  */
 import { supabase } from "./supabase";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+// All canvas API calls go through Next.js API routes — no separate backend needed.
+// Studio uses /api/studio/*, Canvas uses /api/canvas/*.
+const BACKEND_URL = "/api/canvas";
 
 async function getToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();

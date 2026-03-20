@@ -22,7 +22,14 @@ export function ImageOutputNode({ id }: NodeProps) {
       onNodeProgress: (nid, pct, stage) => setNodeState(nid, { progress: pct, stage }),
       onNodeComplete: (nid, outputs) => setNodeState(nid, { status: "complete", output: outputs.output }),
       onNodeError: (nid, error) => setNodeState(nid, { status: "error", error }),
-    }, { runId });
+    }, {
+      runId,
+      getCachedOutput: (nodeId) => {
+        if (nodeId === id) return undefined;
+        const ns = nodeStates[nodeId];
+        return (ns?.status === "complete" && ns.output !== undefined) ? ns.output : undefined;
+      },
+    });
   };
 
   const cancel = () => {

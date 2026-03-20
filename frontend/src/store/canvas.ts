@@ -110,12 +110,31 @@ export function isConnectionValid(connection: Connection, nodes: Node[]): boolea
   return sourceType === targetType;
 }
 
-const TYPE_COLORS: Record<string, string> = {
+export const TYPE_COLORS: Record<string, string> = {
   text: "#eab308",
   image: "#60a5fa",
   config: "#c084fc",
   video: "#fb923c",
 };
+
+/** Apply the standard color/label style to a pre-built edge (template edges, demo graph). */
+export function styledEdge(
+  edge: Edge,
+  sourceNodeType: string,
+  sourceHandle?: string | null
+): Edge {
+  const type = getSourceDataType(sourceNodeType, sourceHandle);
+  const color = TYPE_COLORS[type] || "#888";
+  return {
+    ...edge,
+    label: type,
+    labelStyle: { fontSize: 8, fill: color, fontFamily: "monospace", fontWeight: 600 },
+    labelBgStyle: { fill: "#171717", fillOpacity: 0.85 },
+    labelBgPadding: [2, 4] as [number, number],
+    labelBgBorderRadius: 3,
+    style: { stroke: color, strokeWidth: 1.5, opacity: 0.7 },
+  };
+}
 
 const MAX_HISTORY = 50;
 

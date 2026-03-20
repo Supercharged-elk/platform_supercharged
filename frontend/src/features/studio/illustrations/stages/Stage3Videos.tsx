@@ -1,13 +1,18 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, RefreshCw, Play, ArrowLeft, Loader2 } from "lucide-react";
 import { useIllustrations } from "../hooks/useIllustrations";
 import { GeneratingState } from "../../_shared/GeneratingState";
 import { ErrorBlock } from "../../_shared/ErrorBlock";
+import { JobProgressBar } from "../../_shared/JobProgressBar";
 import { base64ToDataUrl, downloadFromUrl, downloadAsZip } from "../../_shared/utils";
 
 export function Stage3Videos() {
-  const { videos, generateVideo, generateAllVideos, goBack } = useIllustrations();
+  const { videos, generateVideo, generateAllVideos, goBack, resumePolling } = useIllustrations();
+
+  useEffect(() => {
+    void resumePolling();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Local per-card editable prompts — initialized from vid.prompt
   const [localPrompts, setLocalPrompts] = useState<Record<string, string>>(() =>
@@ -166,6 +171,11 @@ export function Stage3Videos() {
           </div>
         ))}
       </div>
+
+      <JobProgressBar
+        items={videos.map((v) => ({ id: v.id, status: v.status, error: v.error }))}
+        accentColor="violet"
+      />
 
       {/* Bottom navigation */}
       <div className="flex items-center justify-between pt-2">

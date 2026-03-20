@@ -58,7 +58,7 @@ export function VideoNode({ id }: NodeProps) {
       {state.status === "running" && (
         <div className="mb-2">
           <div className="w-full bg-neutral-800 rounded-full h-1.5">
-            <div className="bg-orange-500 h-1.5 rounded-full transition-all duration-700" style={{ width: `${state.progress}%` }} />
+            <div className="bg-orange-500 h-1.5 rounded-full" style={{ width: `${state.progress ?? 0}%`, transition: (state.progress ?? 0) > 0 ? 'width 0.7s ease' : 'none' }} />
           </div>
           <p className="text-xs text-neutral-500 mt-1">{state.stage}</p>
         </div>

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from auth import get_auth, AuthContext, get_supabase
 from limiter import limiter
+from routers.models import PLATFORM_MODEL_IDS
 from credit_manager import check_and_deduct
 from progress_tracker import run_prediction_with_progress, mark_complete, mark_failed
 
@@ -30,7 +31,7 @@ async def edit(request: Request, req: EditRequest, auth: AuthContext = Depends(g
     sb = get_supabase()
     model_ref = MODEL
 
-    if req.model_config_id:
+    if req.model_config_id and req.model_config_id not in PLATFORM_MODEL_IDS:
         cfg = sb.table("model_configs").select("model_ref").eq("id", req.model_config_id).limit(1).execute()
         cfg_row = cfg.data[0] if cfg and cfg.data else None
         if cfg_row and cfg_row.get("model_ref"):
@@ -77,11 +78,8 @@ async def _run_edit(sb, gen_id: str, model_ref: str, req: EditRequest):
             "edit",
             model_ref,
             {
-                "image": req.image_url,
+                "input_image": req.image_url,
                 "prompt": req.prompt,
-                "strength": req.strength,
-                "num_inference_steps": req.steps,
-                "guidance_scale": req.guidance,
             },
         )
         sb.table("generations").update({"image_url": image_url}).eq("id", gen_id).execute()

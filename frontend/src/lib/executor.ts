@@ -171,6 +171,7 @@ async function pollProgress(
         }
       } catch (err) {
         clearInterval(interval);
+        onError(err instanceof Error ? err.message : String(err));
         reject(err);
       }
     }, 1500);
@@ -338,15 +339,19 @@ export async function executeNode(
   const sorted = topologicalSort(scopedNodes, scopedEdges);
   const outputs: NodeOutputs = new Map();
 
+  let upstreamError: { nodeId: string; msg: string } | null = null;
+
   for (const node of sorted) {
     if (cancelledRuns.has(runId)) {
       callbacks.onNodeError(node.id, "Run cancelled");
       break;
     }
 
-    // Cache: upstream nodes (not the direct target) can reuse a previous output
-    // rather than making a redundant API call. Callers opt in by passing getCachedOutput.
-    if (node.id !== targetNodeId && options.getCachedOutput) {
+    // Cache: upstream API nodes (not data nodes, not the direct target) can reuse a
+    // previous output to avoid redundant API calls. Data nodes (prompt, modelSelector)
+    // are always re-executed because the user may have changed their value.
+    const isDataNode = node.type === "promptNode" || node.type === "modelSelectorNode";
+    if (!isDataNode && node.id !== targetNodeId && options.getCachedOutput) {
       const cached = options.getCachedOutput(node.id);
       if (cached !== undefined) {
         outputs.set(node.id, { output: cached });
@@ -364,8 +369,15 @@ export async function executeNode(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       callbacks.onNodeError(node.id, msg);
+      upstreamError = { nodeId: node.id, msg };
       break; // Detener la cadena
     }
+  }
+
+  // If an upstream node failed before the target ran, propagate the error to the target
+  // so it doesn't stay stuck in "running/Starting..." state.
+  if (upstreamError && upstreamError.nodeId !== targetNodeId && !outputs.has(targetNodeId)) {
+    callbacks.onNodeError(targetNodeId, upstreamError.msg);
   }
 
   return runId;

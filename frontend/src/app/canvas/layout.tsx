@@ -45,6 +45,16 @@ function CanvasComingSoon() {
 
 export default async function CanvasLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = cookies();
+
+  // Allow E2E tests to bypass the dev-email gate in non-production environments
+  const isE2EBypass =
+    process.env.NODE_ENV !== "production" &&
+    cookieStore.get("e2e_auth_bypass")?.value === "1";
+
+  if (isE2EBypass) {
+    return <>{children}</>;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

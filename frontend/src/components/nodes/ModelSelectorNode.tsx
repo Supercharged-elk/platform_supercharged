@@ -23,36 +23,53 @@ export function ModelSelectorNode({ id, data }: NodeProps) {
   const [loading, setLoading] = useState(false);
 
   const requiredTask = typeof data.required_task === "string" ? data.required_task : "";
-  const isFixedTask = requiredTask === "multi_ref" || requiredTask === "video";
+  const isFixedTask = requiredTask === "multi_ref" || requiredTask === "video" || requiredTask === "edit";
   const nodeProjectId = ((data.project_id as string) || "").trim();
   const projectId = (requiredTask === "multi_ref" ? (globalProjectId || nodeProjectId) : nodeProjectId).trim();
   const title = typeof data.title === "string" && data.title.trim().length > 0 ? data.title : "Model";
 
+  const loadGlobalModels = (task: string) => {
+    setLoading(true);
+    api.get<{ models: ModelConfig[] }>(`/models/global?task=${encodeURIComponent(task)}`)
+      .then((r) => {
+        setModels(r.models);
+        // Auto-select first platform model if nothing is selected yet
+        if (r.models.length > 0 && !((data.config as { id?: string } | undefined)?.id)) {
+          updateNodeData(id, { selected_model_id: r.models[0].id, config: r.models[0] });
+        }
+      })
+      .catch(() => setModels([]))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    // Fixed platform tasks (multi_ref, video) use global models endpoint
+    // Fixed platform tasks (multi_ref, video) always use the global endpoint
     if (isFixedTask) {
+      loadGlobalModels(requiredTask);
+      return;
+    }
+
+    // Standard generate: use project models if a valid UUID is entered,
+    // otherwise fall back to global generate models (FLUX 1.1 Pro, etc.)
+    if (projectId && isValidUUID(projectId)) {
+      const query = requiredTask ? `?task=${encodeURIComponent(requiredTask)}` : "";
       setLoading(true);
-      api.get<{ models: ModelConfig[] }>(`/models/global?task=${encodeURIComponent(requiredTask)}`)
+      api.get<{ models: ModelConfig[] }>(`/models/${projectId}${query}`)
         .then((r) => {
-          setModels(r.models);
-          // Auto-select the fixed platform model
-          if (r.models.length > 0 && !((data.config as { id?: string } | undefined)?.id)) {
-            const fixed = r.models[0];
-            updateNodeData(id, { selected_model_id: fixed.id, config: fixed });
+          if (r.models.length > 0) {
+            setModels(r.models);
+          } else {
+            // Project has no models — fall back to global
+            loadGlobalModels("generate");
           }
         })
-        .catch(() => setModels([]))
+        .catch(() => loadGlobalModels("generate"))
         .finally(() => setLoading(false));
       return;
     }
 
-    if (!projectId || !isValidUUID(projectId)) return;
-    const query = requiredTask ? `?task=${encodeURIComponent(requiredTask)}` : "";
-    setLoading(true);
-    api.get<{ models: ModelConfig[] }>(`/models/${projectId}${query}`)
-      .then((r) => setModels(r.models))
-      .catch(() => setModels([]))
-      .finally(() => setLoading(false));
+    // No project UUID — load global generate models immediately
+    loadGlobalModels("generate");
   }, [projectId, requiredTask, isFixedTask]);
 
   // Sync selected_model_id → config object
@@ -91,7 +108,7 @@ export function ModelSelectorNode({ id, data }: NodeProps) {
         />
       ) : (
         <p className="text-[11px] text-neutral-500 mb-2">
-          {requiredTask === "multi_ref" ? "Platform model: FLUX 2 Pro" : "Platform model: Kling v2.1"}
+          {requiredTask === "multi_ref" ? "Platform model: FLUX 2 Pro" : requiredTask === "edit" ? "Platform model: FLUX Kontext Pro" : "Platform model: Kling v2.1"}
         </p>
       )}
 
@@ -128,7 +145,7 @@ export function ModelSelectorNode({ id, data }: NodeProps) {
         </p>
       )}
 
-      <Handle type="source" position={Position.Right} id="output" className="!bg-neutral-500 !w-3 !h-3" />
+      <Handle type="source" position={Position.Right} id="output" title="config" className="!bg-purple-400 !w-3.5 !h-3.5" />
     </div>
   );
 }

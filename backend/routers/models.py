@@ -31,6 +31,20 @@ def supports_multi_ref(row: dict) -> bool:
 
 PLATFORM_MODELS = [
     {
+        "id": "platform-generate-flux11pro",
+        "display_name": "FLUX 1.1 Pro",
+        "model_ref": "black-forest-labs/flux-1.1-pro",
+        "trigger_word": None,
+        "use_enrichment": False,
+    },
+    {
+        "id": "platform-edit-fluxkontextpro",
+        "display_name": "FLUX Kontext Pro (Edit)",
+        "model_ref": "black-forest-labs/flux-kontext-pro",
+        "trigger_word": None,
+        "use_enrichment": False,
+    },
+    {
         "id": "platform-multiref-flux2pro",
         "display_name": "FLUX 2 Pro (Multi-Ref)",
         "model_ref": "black-forest-labs/flux-2-pro",
@@ -46,15 +60,21 @@ PLATFORM_MODELS = [
     },
 ]
 
+PLATFORM_MODEL_IDS = {m["id"] for m in PLATFORM_MODELS}
+
 
 @router.get("/models/global")
 async def get_global_models(
     task: str | None = Query(default=None),
     auth: AuthContext = Depends(get_auth),
 ):
-    """Platform-wide fixed models (multi_ref, video) — no project_id needed."""
+    """Platform-wide fixed models (generate, multi_ref, video) — no project_id needed."""
     models = PLATFORM_MODELS
-    if task == "multi_ref":
+    if task == "generate":
+        models = [m for m in models if "flux-1.1" in m["model_ref"]]
+    elif task == "edit":
+        models = [m for m in models if "kontext" in m["model_ref"]]
+    elif task == "multi_ref":
         models = [m for m in models if m["model_ref"] in MULTI_REF_MODEL_ALLOWLIST]
     elif task == "video":
         models = [m for m in models if "kling" in m["model_ref"]]

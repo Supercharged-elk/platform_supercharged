@@ -4,7 +4,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { IllustrationsStage, ColorizedItem, PromptItem, VideoItem } from "../types";
 import { nanoid, fileToBase64, base64ToDataUrl, pLimit } from "../../_shared/utils";
 import { colorizeSketch, analyzeWithVision } from "../../_shared/services/gemini";
-import { waitForWavespeedPrediction } from "../../_shared/services/wavespeed";
+import { startWavespeedPrediction, pollWavespeedPrediction } from "../../_shared/services/wavespeed";
 
 const WAN_MODEL = "wavespeed-ai/wan-2.2/image-to-video-lora";
 
@@ -57,6 +57,7 @@ interface IllustrationsStore {
   // Stage 3
   generateVideo: (id: string, promptOverride?: string) => Promise<void>;
   generateAllVideos: () => Promise<void>;
+  resumePolling: () => Promise<void>;
 
   // Navigation
   goBack: () => void;
@@ -335,7 +336,6 @@ export const useIllustrations = create<IllustrationsStore>()(
         const item = get().videos.find((v) => v.id === id);
         if (!item) return;
 
-        // Persist prompt override to store before generating
         if (promptOverride !== undefined) {
           set((s) => ({
             videos: s.videos.map((v) =>
@@ -351,7 +351,6 @@ export const useIllustrations = create<IllustrationsStore>()(
         }));
 
         const effectivePrompt = promptOverride ?? item.prompt;
-
         // Guard: imageBase64 is stripped from localStorage persistence.
         if (!item.imageBase64) {
           set((s) => ({
@@ -380,17 +379,35 @@ export const useIllustrations = create<IllustrationsStore>()(
               : "",
           };
 
-          const videoUrl = await waitForWavespeedPrediction(WAN_MODEL, input);
+          const started = await startWavespeedPrediction(WAN_MODEL, input);
+          const predictionId = started.data?.id ?? started.id;
+
           set((s) => ({
             videos: s.videos.map((v) =>
-              v.id === id ? { ...v, videoUrl, status: "done" } : v
+              v.id === id ? { ...v, predictionId } : v
+            ),
+          }));
+
+          const completed = await pollWavespeedPrediction(predictionId);
+          const norm = completed.data ?? completed;
+
+          if (norm.status !== "completed") {
+            throw new Error(norm.error ?? `WaveSpeed prediction ${norm.status}`);
+          }
+
+          const videoUrl = norm.outputs?.[0];
+          if (!videoUrl) throw new Error("WaveSpeed returned no output");
+
+          set((s) => ({
+            videos: s.videos.map((v) =>
+              v.id === id ? { ...v, videoUrl, status: "done", predictionId: null } : v
             ),
           }));
         } catch (e) {
           set((s) => ({
             videos: s.videos.map((v) =>
               v.id === id
-                ? { ...v, status: "error", error: (e as Error).message }
+                ? { ...v, status: "error", error: (e as Error).message, predictionId: null }
                 : v
             ),
           }));
@@ -400,6 +417,45 @@ export const useIllustrations = create<IllustrationsStore>()(
       generateAllVideos: async () => {
         const { videos, generateVideo } = get();
         await pLimit(3, videos.filter((v) => v.status !== "done").map((v) => () => generateVideo(v.id)));
+      },
+
+      resumePolling: async () => {
+        const stuck = get().videos.filter(
+          (v) => v.status === "generating" && v.predictionId
+        );
+        if (!stuck.length) return;
+
+        await Promise.all(
+          stuck.map(async (vid) => {
+            try {
+              const completed = await pollWavespeedPrediction(vid.predictionId!);
+              const norm = completed.data ?? completed;
+
+              if (norm.status !== "completed") {
+                throw new Error(norm.error ?? `WaveSpeed prediction ${norm.status}`);
+              }
+
+              const videoUrl = norm.outputs?.[0];
+              if (!videoUrl) throw new Error("WaveSpeed returned no output");
+
+              set((s) => ({
+                videos: s.videos.map((v) =>
+                  v.id === vid.id
+                    ? { ...v, videoUrl, status: "done", predictionId: null }
+                    : v
+                ),
+              }));
+            } catch (e) {
+              set((s) => ({
+                videos: s.videos.map((v) =>
+                  v.id === vid.id
+                    ? { ...v, status: "error", error: (e as Error).message, predictionId: null }
+                    : v
+                ),
+              }));
+            }
+          })
+        );
       },
 
       goBack: () => {

@@ -37,20 +37,17 @@ export function OnboardingBanner({ visible, onDismiss }: OnboardingBannerProps) 
   const nodes = useCanvasStore((s) => s.nodes);
   const [hovered, setHovered] = useState<number | null>(null);
 
-  if (!visible) return null;
-
   const hasAnyRunning = Object.values(nodeStates).some((s) => s.status === "running");
   const hasAnyComplete = Object.values(nodeStates).some((s) => s.status === "complete");
-
-  // Determine active step
   const activeStep = hasAnyComplete ? 2 : hasAnyRunning ? 1 : 0;
 
-  // Auto-dismiss after completion — must be in useEffect to avoid re-creating timers on every render
   useEffect(() => {
-    if (!hasAnyComplete) return;
+    if (!visible || !hasAnyComplete) return;
     const t = setTimeout(onDismiss, 3500);
     return () => clearTimeout(t);
-  }, [hasAnyComplete, onDismiss]);
+  }, [visible, hasAnyComplete, onDismiss]);
+
+  if (!visible) return null;
 
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none">

@@ -1,7 +1,7 @@
 # Spec: Studio Pipeline Reliability — v2
 
 ## Status
-In progress
+Complete
 
 ## Context
 Both pipelines (Illustrations, Real Footage) are deployed on Vercel and accessible
@@ -98,11 +98,12 @@ distinguishes empty response from upstream errors.
 5. `npm run build` passes with no TypeScript errors.
 
 ## Implementation Checklist
-- [ ] Strip base64 from `useIllustrations` partialize
-- [ ] Add guard in `colorizeItem` for null `originalBase64`
-- [ ] Add guard in `generateVideo` for empty `imageBase64`
-- [ ] Improve video analysis error message in `gemini/route.ts`
-- [ ] Add `image_generated` tracking in `gemini/route.ts`
-- [ ] Add `video_analyzed` tracking in `gemini/route.ts`
-- [ ] Confirm 16/16 E2E tests pass
-- [ ] Confirm TypeScript build passes
+- [x] Strip base64 from `useIllustrations` partialize
+- [x] Add guard in `colorizeItem` for null `originalBase64`
+- [x] Add guard in `generateVideo` for empty `imageBase64`
+- [x] Improve video analysis error message in `gemini/route.ts`
+- [x] Add `image_generated` tracking in `gemini/route.ts`
+- [x] Add `video_analyzed` tracking in `gemini/route.ts`
+- [x] Fix IL E2E test selectors to match actual component text (14/14 IL tests passing)
+- [x] Confirm 30/30 Studio E2E tests pass (16 RF + 14 IL)
+- [x] Confirm TypeScript build passes

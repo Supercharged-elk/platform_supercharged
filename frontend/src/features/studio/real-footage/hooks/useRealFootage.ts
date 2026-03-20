@@ -11,7 +11,7 @@ import type {
 import { nanoid, pLimit } from "../../_shared/utils";
 import { analyzeVideos, generateImage } from "../../_shared/services/gemini";
 import { chatWithOpenAI } from "../../_shared/services/openai";
-import { waitForPrediction } from "../../_shared/services/replicate";
+import { startPrediction, pollPrediction } from "../../_shared/services/replicate";
 import { base64ToDataUrl } from "../../_shared/utils";
 
 const KLING_MODEL = "kwaivgi/kling-v2.1";
@@ -61,8 +61,10 @@ interface RealFootageStore {
   confirmKeyframes: () => void;
 
   // Stage 4
+  addExternalVideos: (files: File[]) => Promise<void>;
   generateVideo: (id: string, videoPromptOverride?: string) => Promise<void>;
   generateAllVideos: () => Promise<void>;
+  resumePolling: () => Promise<void>;
 
   // Navigation
   goBack: () => void;
@@ -292,6 +294,24 @@ Return one item per action in the same order.`;
       },
 
       // ── Stage 4 ──────────────────────────────────────────────────────────
+      addExternalVideos: async (files) => {
+        const items: VideoItem[] = await Promise.all(
+          files.map(async (file) => {
+            const base64 = await (await import("../../_shared/utils")).fileToBase64(file);
+            return {
+              id: nanoid(),
+              keyframeId: "",
+              base64,
+              imagePrompt: "",
+              videoPrompt: "",
+              videoUrl: null,
+              status: "idle" as const,
+            };
+          })
+        );
+        set((s) => ({ videos: [...s.videos, ...items] }));
+      },
+
       generateVideo: async (id, videoPromptOverride) => {
         const item = get().videos.find((v) => v.id === id);
         if (!item) return;
@@ -311,24 +331,42 @@ Return one item per action in the same order.`;
         }));
 
         const effectivePrompt = videoPromptOverride ?? item.videoPrompt;
-
         try {
           const startImage = base64ToDataUrl(item.base64, "image/jpeg");
-          const videoUrl = await waitForPrediction(KLING_MODEL, {
+
+          const prediction = await startPrediction(KLING_MODEL, {
             mode: "pro",
             start_image: startImage,
             prompt: effectivePrompt,
             duration: 5,
           });
+
           set((s) => ({
             videos: s.videos.map((v) =>
-              v.id === id ? { ...v, videoUrl, status: "done" } : v
+              v.id === id ? { ...v, predictionId: prediction.id } : v
+            ),
+          }));
+
+          const completed = await pollPrediction(prediction.id);
+
+          if (completed.status !== "succeeded") {
+            throw new Error(completed.error ?? `Prediction ${completed.status}`);
+          }
+
+          const output = completed.output;
+          const videoUrl = Array.isArray(output) ? (output[0] as string) : (output as string);
+
+          set((s) => ({
+            videos: s.videos.map((v) =>
+              v.id === id ? { ...v, videoUrl, status: "done", predictionId: null } : v
             ),
           }));
         } catch (e) {
           set((s) => ({
             videos: s.videos.map((v) =>
-              v.id === id ? { ...v, status: "error", error: (e as Error).message } : v
+              v.id === id
+                ? { ...v, status: "error", error: (e as Error).message, predictionId: null }
+                : v
             ),
           }));
         }
@@ -339,6 +377,44 @@ Return one item per action in the same order.`;
         await pLimit(
           3,
           videos.filter((v) => v.status !== "done").map((v) => () => generateVideo(v.id))
+        );
+      },
+
+      resumePolling: async () => {
+        const stuck = get().videos.filter(
+          (v) => v.status === "generating" && v.predictionId
+        );
+        if (!stuck.length) return;
+
+        await Promise.all(
+          stuck.map(async (vid) => {
+            try {
+              const completed = await pollPrediction(vid.predictionId!);
+
+              if (completed.status !== "succeeded") {
+                throw new Error(completed.error ?? `Prediction ${completed.status}`);
+              }
+
+              const output = completed.output;
+              const videoUrl = Array.isArray(output) ? (output[0] as string) : (output as string);
+
+              set((s) => ({
+                videos: s.videos.map((v) =>
+                  v.id === vid.id
+                    ? { ...v, videoUrl, status: "done", predictionId: null }
+                    : v
+                ),
+              }));
+            } catch (e) {
+              set((s) => ({
+                videos: s.videos.map((v) =>
+                  v.id === vid.id
+                    ? { ...v, status: "error", error: (e as Error).message, predictionId: null }
+                    : v
+                ),
+              }));
+            }
+          })
         );
       },
 
